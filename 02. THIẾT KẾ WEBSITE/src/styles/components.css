@@ -1,0 +1,271 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 9px 16px;
+  color: #fff;
+  font-weight: 700;
+  line-height: 1.2;
+  border: 1px solid transparent;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.button--primary {
+  background: var(--color-primary);
+}
+
+.button--primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.button--secondary {
+  color: var(--color-primary-hover);
+  background: #fff;
+  border-color: var(--color-primary);
+}
+
+.button--secondary:hover:not(:disabled) {
+  background: #fbf3e3;
+}
+
+.button--danger {
+  background: #d94b4b;
+}
+
+.button--danger:hover:not(:disabled) {
+  background: #bd3838;
+}
+
+.field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.field__label {
+  color: #654a36;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.field__control {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 9px 12px;
+  color: var(--color-text);
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+}
+
+.field__control::placeholder {
+  color: #aa9b8c;
+}
+
+.field__control:focus {
+  border-color: var(--color-primary);
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(184 121 55 / 14%);
+}
+
+.field__control--error {
+  border-color: #d94b4b;
+}
+
+.field__select {
+  cursor: pointer;
+}
+
+.field__error {
+  color: #c63e3e;
+  font-size: 12px;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 9px;
+  color: #674a36;
+  font-size: 12px;
+  font-weight: 600;
+  background: #f2eadc;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.status-badge--success {
+  color: #397c4a;
+  background: #e5f4e8;
+}
+
+.status-badge--warning {
+  color: #946700;
+  background: #fff1c9;
+}
+
+.status-badge--danger {
+  color: #bf4141;
+  background: #fdeaea;
+}
+
+.status-badge--info {
+  color: #426d9c;
+  background: #e8f1fa;
+}
+
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  -webkit-overflow-scrolling: touch;
+}
+
+.data-table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.data-table th,
+.data-table td {
+  height: 52px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.data-table thead th {
+  height: 52px;
+  color: #5e402b;
+  font-weight: 700;
+  background: var(--color-table-head);
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.data-table__empty {
+  height: 140px !important;
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.empty-state {
+  display: grid;
+  min-height: 220px;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 24px;
+  color: #806a56;
+  text-align: center;
+}
+
+.empty-state__icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  border-radius: 50%;
+}
+
+.empty-state p {
+  max-width: 400px;
+  margin: 0;
+  font-size: 14px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  overflow: auto;
+  padding: 24px;
+  place-items: center;
+  background: rgb(45 36 28 / 45%);
+}
+
+.modal {
+  width: min(100%, 520px);
+  max-height: min(90vh, 800px);
+  overflow: auto;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-popover);
+}
+
+.modal--small {
+  width: min(100%, 390px);
+}
+
+.modal--large {
+  width: min(100%, 760px);
+}
+
+.modal__header,
+.modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+}
+
+.modal__header {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modal__header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.modal__body {
+  padding: 20px;
+}
+
+.modal__footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--color-border);
+}
+
+.modal__close {
+  width: 34px;
+  height: 34px;
+}
+
+@media (max-width: 479px) {
+  .modal-backdrop {
+    padding: 12px;
+  }
+
+  .modal__header,
+  .modal__body,
+  .modal__footer {
+    padding-inline: 16px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding-inline: 12px;
+  }
+}
