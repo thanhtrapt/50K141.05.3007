@@ -33,13 +33,15 @@ export default function DashboardPage() {
   return (
     <div className="page-stack dashboard-page">
       <PageHeader title="TRANG CHỦ" />
-      {alertGroups.map((group) => (
-        <div className="dashboard-alert-group" key={group.id}>
+      {alertGroups.map((group) => {
+        const destination = group.id === 'stock' ? '/canh-bao/ton-kho' : '/canh-bao/han-su-dung';
+        return (
+          <div className="dashboard-alert-group" key={group.id}>
           {!dismissed.includes(group.id) && (
             <div className="dashboard-alert-banner" role="status">
               <AlertTriangle aria-hidden="true" size={22} />
               <strong>{group.banner}</strong>
-              <Link to="/canh-bao">Xem thông báo</Link>
+              <Link to={destination}>Xem thông báo</Link>
               <button type="button" aria-label="Đóng thông báo" onClick={() => dismiss(group.id)}>
                 <X aria-hidden="true" size={19} />
               </button>
@@ -47,12 +49,12 @@ export default function DashboardPage() {
           )}
           <Panel
             title={group.heading}
-            action={<Link className="text-link" to="/canh-bao">Xem chi tiết ›</Link>}
+            action={<Link className="text-link" to={destination}>Xem chi tiết ›</Link>}
             className="dashboard-panel"
           >
             <div className="dashboard-summary-grid">
               {group.rows.map((row) => (
-                <Link className={`summary-card summary-card--${row.tone}`} to="/canh-bao" key={row.label}>
+                <Link className={`summary-card summary-card--${row.tone}`} to={destination} key={row.label}>
                   <span className="summary-card__icon">
                     {row.tone === 'danger'
                       ? <CircleAlert aria-hidden="true" size={21} />
@@ -65,8 +67,9 @@ export default function DashboardPage() {
               ))}
             </div>
           </Panel>
-        </div>
-      ))}
+          </div>
+        );
+      })}
     </div>
   );
 }

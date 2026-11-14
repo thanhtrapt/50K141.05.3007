@@ -56,8 +56,23 @@ export const expiryItems = [
 ];
 
 export const inboundRecords = [
-  { id: 'PNK-20261029-005', date: '29/10/2026', total: 14000000 },
-  { id: 'PNK-20261004-004', date: '04/10/2026', total: 6300000 },
+  {
+    id: 'PNK-20261029-005', date: '29/10/2026', total: 14000000, creator: 'Lê Thị Thu Hương', paymentStatus: 'Chưa thanh toán',
+    items: [
+      { product: 'Serum Vitamin C', unit: 'Chai', price: 380000, quantity: 10, lot: '291026-1' },
+      { product: 'Toner cấp ẩm', unit: 'Chai', price: 190000, quantity: 20, lot: '291026-2' },
+      { product: 'Sữa rửa mặt dưỡng ẩm', unit: 'Chai', price: 200000, quantity: 11, lot: '291026-3' },
+      { product: 'Mặt nạ dưỡng trắng', unit: 'Hộp', price: 280000, quantity: 15, lot: '291026-3' },
+    ],
+  },
+  {
+    id: 'PNK-20261004-004', date: '04/10/2026', total: 6300000, creator: 'Lê Thị Thu Hương', paymentStatus: 'Đã thanh toán',
+    items: [
+      { product: 'Serum Vitamin C', unit: 'Chai', price: 380000, quantity: 10, lot: '041026-1' },
+      { product: 'Toner cấp ẩm', unit: 'Chai', price: 190000, quantity: 10, lot: '041026-2' },
+      { product: 'Sữa rửa mặt dưỡng ẩm', unit: 'Chai', price: 200000, quantity: 3, lot: '041026-3' },
+    ],
+  },
   { id: 'PNK-20260905-003', date: '05/09/2026', total: 8900000 },
   { id: 'PNK-20260815-002', date: '15/08/2026', total: 10200000 },
   { id: 'PNK-20260713-001', date: '13/07/2026', total: 13700000 },
@@ -79,7 +94,7 @@ export const appointmentEvents = [
   { id: 'LH005', day: 2, start: '08:30', end: '10:00', customer: 'Đỗ Khánh Linh', service: 'Chăm sóc da chuyên sâu', tone: 'mint' },
   { id: 'LH006', day: 2, start: '11:00', end: '12:00', customer: 'Nguyễn Phương Thảo', service: 'Massage tinh dầu', tone: 'lavender' },
   { id: 'LH007', day: 2, start: '15:00', end: '16:30', customer: 'Bùi Hải Yến', service: 'Ủ dưỡng trắng toàn thân', tone: 'rose' },
-  { id: 'LH008', day: 3, start: '09:30', end: '11:00', customer: 'Trần Ngọc Hân', service: 'Chăm sóc da chuyên sâu', tone: 'mint' },
+  { id: 'LH008', day: 3, start: '09:30', end: '11:00', customer: 'Trần Ngọc Hân', phone: '0903 456 789', service: 'Chăm sóc da chuyên sâu', note: 'Da nhạy cảm, ưu tiên sản phẩm dịu nhẹ. Khách muốn tư vấn thêm về dưỡng ẩm sau liệu trình.', tone: 'mint' },
   { id: 'LH009', day: 3, start: '17:00', end: '18:00', customer: 'Võ Tố Anh', service: 'Chăm sóc da', tone: 'lavender' },
   { id: 'LH010', day: 4, start: '10:00', end: '11:30', customer: 'Nguyễn Lan Hương', service: 'Massage tinh dầu', tone: 'lavender' },
   { id: 'LH011', day: 4, start: '14:30', end: '16:00', customer: 'Hoàng Thùy Dung', service: 'Chăm sóc da chuyên sâu', tone: 'mint' },

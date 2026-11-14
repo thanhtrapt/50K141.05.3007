@@ -12,6 +12,8 @@ const routeTitles = {
   '/phieu-nhap-kho': 'Phiếu nhập kho',
   '/phieu-xuat-kho': 'Phiếu xuất kho nội bộ',
   '/canh-bao': 'Cảnh báo',
+  '/canh-bao/ton-kho': 'Cảnh báo tồn kho',
+  '/canh-bao/han-su-dung': 'Cảnh báo hạn sử dụng',
 };
 
 const vietnameseDate = new Intl.DateTimeFormat('vi-VN', {
@@ -20,9 +22,44 @@ const vietnameseDate = new Intl.DateTimeFormat('vi-VN', {
   year: 'numeric',
 }).format(new Date());
 
+function getPageTitle(pathname) {
+  if (routeTitles[pathname]) return routeTitles[pathname];
+
+  const segments = pathname.split('/').filter(Boolean);
+  const section = segments[0];
+  const action = segments.at(-1);
+
+  if (section === 'ho-so-khach-hang' || section === 'khach-hang') {
+    if (action === 'tao-moi') return 'Tạo hồ sơ khách hàng';
+    if (action === 'chinh-sua') return 'Chỉnh sửa hồ sơ khách hàng';
+    if (segments.length > 1) return 'Chi tiết hồ sơ khách hàng';
+  }
+
+  if (section === 'dich-vu') {
+    if (action === 'tao-moi') return 'Tạo dịch vụ';
+    if (action === 'chinh-sua') return 'Chỉnh sửa dịch vụ';
+    if (segments.length > 1) return 'Chi tiết dịch vụ';
+  }
+
+  if (section === 'lich-hen' && segments.length > 1) return 'Chi tiết lịch hẹn';
+  if (section === 'danh-gia' && segments.length > 1) return 'Chi tiết đánh giá';
+  if (section === 'phieu-nhap-kho' && segments.length > 1) {
+    if (action === 'tao-moi') return 'Tạo phiếu nhập kho';
+    return 'Chi tiết phiếu nhập kho';
+  }
+
+  if (section === 'my-pham') {
+    if (action === 'tao-moi') return 'Tạo mới';
+    if (action === 'chinh-sua') return 'Chỉnh sửa';
+    if (segments.length > 1) return 'Chi tiết sản phẩm';
+  }
+
+  return 'Trang chủ';
+}
+
 export default function TopBar({ onMenuClick }) {
   const { pathname } = useLocation();
-  const pageTitle = routeTitles[pathname] ?? 'Trang chủ';
+  const pageTitle = getPageTitle(pathname);
 
   return (
     <header className="top-bar">
@@ -45,7 +82,7 @@ export default function TopBar({ onMenuClick }) {
           <span>{vietnameseDate}</span>
         </div>
         <span className="top-bar__divider" aria-hidden="true" />
-        <Link className="icon-button top-bar__notifications" to="/canh-bao" aria-label="Xem cảnh báo">
+        <Link className="icon-button top-bar__notifications" to="/canh-bao/ton-kho" aria-label="Xem cảnh báo">
           <Bell aria-hidden="true" size={25} strokeWidth={1.8} />
           <span className="notification-dot" aria-hidden="true" />
         </Link>

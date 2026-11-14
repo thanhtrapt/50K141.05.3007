@@ -4,6 +4,7 @@ import Button from '../../components/ui/Button.jsx';
 import DataTable from '../../components/ui/DataTable.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
+import PageListToolbar from '../../components/ui/PageListToolbar.jsx';
 import Pagination from '../../components/ui/Pagination.jsx';
 import SearchBox from '../../components/ui/SearchBox.jsx';
 import SelectField from '../../components/ui/SelectField.jsx';
@@ -97,13 +98,13 @@ export default function OutboundPage() {
 
   return (
     <div className="page-stack">
-      <PageHeader title="PHIẾU XUẤT KHO" />
+      <PageHeader title="DANH SÁCH PHIẾU XUẤT KHO" />
       <section className="panel inventory-list-panel">
-        <header className="panel__header"><h2>Danh sách phiếu xuất kho</h2></header>
-        <div className="page-list-toolbar inventory-toolbar">
-          <SearchBox value={query} onChange={(value) => { setQuery(value); setPage(1); }} placeholder="Nhập từ khóa cần tra cứu..." />
-          <Button onClick={() => setMode('create')}><Plus size={18} />Tạo phiếu xuất kho</Button>
-        </div>
+        <PageListToolbar
+          className="inventory-toolbar"
+          search={<SearchBox value={query} onChange={(value) => { setQuery(value); setPage(1); }} placeholder="Nhập từ khóa cần tra cứu..." />}
+          actions={<Button onClick={() => setMode('create')}><Plus size={18} />Tạo phiếu xuất kho</Button>}
+        />
         <DataTable columns={columns} rows={pageRecords} rowKey="id" emptyMessage="Không tìm thấy phiếu xuất kho phù hợp!" />
         <div className="panel__footer"><Pagination page={page} pageCount={pageCount} onChange={setPage} /></div>
       </section>

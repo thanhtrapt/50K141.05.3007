@@ -26,6 +26,10 @@
   --radius-card: 12px;
   --shadow-popover: 0 12px 36px rgb(84 57 35 / 16%);
 
+  --table-heading-height: 56px;
+  --table-row-height: 64px;
+  --table-cell-padding-inline: 16px;
+
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;

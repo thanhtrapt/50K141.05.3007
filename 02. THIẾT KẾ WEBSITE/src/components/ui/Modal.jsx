@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { X } from 'lucide-react';
 
-export default function Modal({ open, title, onClose, children, footer, size = 'medium' }) {
+export default function Modal({ open, title, onClose, children, footer, size = 'medium', layer = 1 }) {
   useEffect(() => {
     if (!open) return undefined;
 
@@ -15,7 +15,7 @@ export default function Modal({ open, title, onClose, children, footer, size = '
   if (!open) return null;
 
   return (
-    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose?.()}>
+    <div className={`modal-backdrop${layer > 1 ? ` modal-backdrop--layer-${layer}` : ''}`} onMouseDown={(event) => event.target === event.currentTarget && onClose?.()}>
       <section className={`modal modal--${size}`} role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <header className="modal__header">
           <h2 id="modal-title">{title}</h2>
