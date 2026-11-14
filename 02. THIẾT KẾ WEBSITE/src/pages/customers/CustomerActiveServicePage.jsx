@@ -4,13 +4,12 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
-  Download,
   FileText,
   ImagePlus,
   Images,
   Info,
+  MessageCircle,
   Trash2,
-  Upload,
   X,
 } from 'lucide-react';
 import Button from '../../components/ui/Button.jsx';
@@ -99,6 +98,18 @@ function statusTone(status) {
   return 'info';
 }
 
+function hasRecordedSessionData(session) {
+  const hasCompletedVisit = session.status !== 'Chưa thực hiện' && session.date && session.date !== '--';
+  return Boolean(
+    hasCompletedVisit
+    || session.result?.trim()
+    || session.notes?.trim()
+    || session.employee?.trim()
+    || session.beforeImages?.length
+    || session.afterImages?.length,
+  );
+}
+
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, (character) => ({
     '&': '&amp;',
@@ -107,10 +118,6 @@ function escapeHtml(value = '') {
     '"': '&quot;',
     "'": '&#39;',
   })[character]);
-}
-
-function fileSafeName(value = '') {
-  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'hinh-anh';
 }
 
 function compressImage(file) {
@@ -141,40 +148,8 @@ function compressImage(file) {
   });
 }
 
-function convertImageFormat(dataUrl, mimeType) {
-  if (dataUrl.startsWith(`data:${mimeType}`)) return Promise.resolve(dataUrl);
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onerror = () => reject(new Error('Không thể chuẩn bị hình ảnh để tải xuống.'));
-    image.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
-      const context = canvas.getContext('2d');
-      if (!context) {
-        reject(new Error('Trình duyệt không thể chuyển đổi hình ảnh.'));
-        return;
-      }
-      context.drawImage(image, 0, 0);
-      resolve(canvas.toDataURL(mimeType, 0.92));
-    };
-    image.src = dataUrl;
-  });
-}
-
-function downloadDataUrl(dataUrl, filename) {
-  const link = document.createElement('a');
-  link.href = dataUrl;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-}
-
 export default function CustomerActiveServicePage({ customer, onBack }) {
   const [usage, setUsage] = useState(() => loadUsage(customer));
-  const [selectedImages, setSelectedImages] = useState(() => new Set());
-  const [imageFormat, setImageFormat] = useState('image/png');
   const [selectedSessionNumber, setSelectedSessionNumber] = useState(null);
   const [lightbox, setLightbox] = useState(null);
   const [startErrorOpen, setStartErrorOpen] = useState(false);
@@ -182,7 +157,6 @@ export default function CustomerActiveServicePage({ customer, onBack }) {
   const [editingResult, setEditingResult] = useState(false);
   const [notice, setNotice] = useState('');
   const [storageError, setStorageError] = useState(false);
-  const galleryInputRef = useRef(null);
   const sessionInputRefs = useRef({});
 
   const storageKey = `${STORAGE_PREFIX}${customer.id}`;
@@ -190,7 +164,14 @@ export default function CustomerActiveServicePage({ customer, onBack }) {
   const completedCount = completedSessionCount(usage.sessions);
   const remainingCount = Math.max(0, usage.totalSessions - completedCount);
   const serviceStatus = completedCount >= usage.totalSessions ? 'Hoàn thành' : usage.status;
-  const selectedGalleryImages = usage.galleryImages.filter((image) => selectedImages.has(image.id));
+  const reportSessions = useMemo(
+    () => [...usage.sessions].sort((first, second) => first.number - second.number).filter(hasRecordedSessionData),
+    [usage.sessions],
+  );
+  const treatmentSessions = useMemo(
+    () => [...usage.sessions].sort((first, second) => first.number - second.number),
+    [usage.sessions],
+  );
   const lightboxImages = useMemo(() => {
     if (!lightbox) return [];
     if (lightbox.scope === 'treatment') return usage.galleryImages;
@@ -201,7 +182,6 @@ export default function CustomerActiveServicePage({ customer, onBack }) {
 
   useEffect(() => {
     setUsage(loadUsage(customer));
-    setSelectedImages(new Set());
     setSelectedSessionNumber(null);
     setLightbox(null);
   }, [customer.id]);
@@ -214,32 +194,6 @@ export default function CustomerActiveServicePage({ customer, onBack }) {
       setStorageError(true);
     }
   }, [storageKey, usage]);
-
-  useEffect(() => {
-    setUsage((current) => {
-      const completed = completedSessionCount(current.sessions);
-      const missingMilestones = current.deliveryMilestones.filter((milestone) => (
-        milestone <= completed && !current.deliveryHistory.some((entry) => entry.milestone === milestone)
-      ));
-      if (!missingMilestones.length) return current;
-
-      const createdAt = dateTimeLabel();
-      return {
-        ...current,
-        deliveryHistory: [
-          ...current.deliveryHistory,
-          ...missingMilestones.map((milestone) => ({
-            id: makeId(),
-            milestone,
-            stage: milestone === current.totalSessions ? 'Hoàn thành liệu trình' : `Sau buổi ${milestone}`,
-            document: 'Báo cáo liệu trình PDF',
-            createdAt,
-            status: 'Chờ gửi',
-          })),
-        ],
-      };
-    });
-  }, [usage.deliveryMilestones, usage.sessions]);
 
   const updateSession = (sessionNumber, updates) => setUsage((current) => ({
     ...current,
@@ -295,22 +249,6 @@ export default function CustomerActiveServicePage({ customer, onBack }) {
     };
   }));
 
-  const addTreatmentImages = async (files, replaceId = null) => {
-    if (!files?.length) return;
-    try {
-      const images = await buildImages(files);
-      setUsage((current) => ({
-        ...current,
-        galleryImages: replaceId
-          ? current.galleryImages.map((image) => image.id === replaceId ? { ...image, ...images[0] } : image)
-          : [...current.galleryImages, ...images],
-      }));
-      setNotice(replaceId ? 'Đã cập nhật ảnh trong thư viện của liệu trình.' : `${images.length} ảnh đã được lưu vào thư viện của liệu trình.`);
-    } catch (error) {
-      setNotice(error.message || 'Không thể lưu hình ảnh.');
-    }
-  };
-
   const addSessionImages = async (sessionNumber, side, files, replaceId = null) => {
     if (!files?.length) return;
     try {
@@ -334,14 +272,6 @@ export default function CustomerActiveServicePage({ customer, onBack }) {
     }
   };
 
-  const removeTreatmentImage = (imageId) => {
-    setUsage((current) => ({
-      ...current,
-      galleryImages: current.galleryImages.filter((image) => image.id !== imageId),
-    }));
-    setSelectedImages((current) => new Set([...current].filter((id) => id !== imageId)));
-  };
-
   const removeSessionImage = (sessionNumber, side, imageId) => {
     setUsage((current) => ({
       ...current,
@@ -351,112 +281,73 @@ export default function CustomerActiveServicePage({ customer, onBack }) {
     }));
   };
 
-  const toggleSelectedImage = (imageId) => setSelectedImages((current) => {
-    const next = new Set(current);
-    if (next.has(imageId)) next.delete(imageId);
-    else next.add(imageId);
-    return next;
-  });
-
-  const toggleSelectAll = () => {
-    if (selectedImages.size === usage.galleryImages.length && usage.galleryImages.length) {
-      setSelectedImages(new Set());
-    } else {
-      setSelectedImages(new Set(usage.galleryImages.map((image) => image.id)));
-    }
-  };
-
-  const exportImages = async () => {
-    if (!selectedGalleryImages.length) {
-      setNotice('Chọn ít nhất một ảnh trong thư viện liệu trình để tải xuống.');
-      return;
-    }
-    const extension = imageFormat === 'image/png' ? 'png' : 'jpg';
-    try {
-      for (const [index, image] of selectedGalleryImages.entries()) {
-        const converted = await convertImageFormat(image.dataUrl, imageFormat);
-        downloadDataUrl(converted, `${fileSafeName(usage.name)}-${fileSafeName(image.name || `anh-${index + 1}`)}.${extension}`);
-        await new Promise((resolve) => window.setTimeout(resolve, 180));
-      }
-      setNotice(`Đã chuẩn bị ${selectedGalleryImages.length} ảnh ${extension.toUpperCase()} để tải xuống.`);
-    } catch (error) {
-      setNotice(error.message || 'Không thể xuất ảnh.');
-    }
-  };
-
-  const exportPdf = (images = usage.galleryImages, stage = null) => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      setNotice('Trình duyệt đang chặn cửa sổ xuất PDF. Hãy cho phép cửa sổ bật lên rồi thử lại.');
-      return;
-    }
-
-    const reportTitle = stage ? `BÁO CÁO LIỆU TRÌNH · ${stage}` : 'BÁO CÁO LIỆU TRÌNH';
-    const photoMarkup = images.length
-      ? `<div class="photos">${images.map((image) => `<figure><img src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name)}"><figcaption>${escapeHtml(image.name)}</figcaption></figure>`).join('')}</div>`
-      : '<p class="empty-photos">Chưa có hình ảnh tổng quan trong hồ sơ liệu trình.</p>';
-
-    printWindow.document.open();
-    printWindow.document.write(`<!doctype html>
-      <html lang="vi"><head><meta charset="utf-8"><title>${escapeHtml(fileSafeName(reportTitle))}</title>
-      <style>
-        @page { size: A4; margin: 17mm; }
-        * { box-sizing: border-box; }
-        body { margin: 0; color: #4f3828; font: 12px Arial, sans-serif; }
-        header { display:flex; justify-content:space-between; align-items:center; padding-bottom:16px; border-bottom:2px solid #b87937; }
-        header img { width:135px; height:auto; object-fit:contain; }
-        header p { color:#8c7867; text-align:right; line-height:1.6; }
-        h1 { margin:22px 0 4px; color:#684a35; font-size:22px; }
-        .subtitle { margin:0 0 20px; color:#947e6e; }
-        h2 { margin:22px 0 10px; color:#684a35; font-size:15px; }
-        .facts { display:grid; grid-template-columns:1fr 1fr; gap:8px 22px; padding:16px; background:#fbf5ef; border:1px solid #ead8bc; border-radius:8px; }
-        .facts div { display:grid; grid-template-columns:132px 1fr; gap:8px; }
-        .facts dt { color:#8c7867; }
-        .facts dd { margin:0; font-weight:600; overflow-wrap:anywhere; }
-        .progress { margin:14px 0; padding:12px 16px; background:#fff8e9; border-radius:8px; }
-        .progress strong { color:#a7682b; }
-        .photos { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
-        figure { margin:0; padding:8px; border:1px solid #ead8bc; border-radius:8px; break-inside:avoid; }
-        figure img { display:block; width:100%; max-height:230px; object-fit:contain; }
-        figcaption { margin-top:6px; color:#8c7867; overflow-wrap:anywhere; }
-        .empty-photos { padding:18px; color:#8c7867; background:#fbf5ef; border-radius:8px; }
-        footer { margin-top:26px; padding-top:10px; color:#8c7867; font-size:10px; border-top:1px solid #ead8bc; }
-      </style></head><body>
-        <header><img src="/assets/brand-lockup.png" alt="Hương Spa"><p>Hồ sơ liệu trình<br>Ngày xuất: ${escapeHtml(dateLabel())}</p></header>
-        <h1>${escapeHtml(reportTitle)}</h1>
-        <p class="subtitle">Tài liệu theo dõi dịch vụ đang sử dụng tại Hương Spa.</p>
-        <h2>Thông tin khách hàng</h2>
-        <dl class="facts">
-          <div><dt>Họ và tên</dt><dd>${escapeHtml(customer.name)}</dd></div>
-          <div><dt>Mã khách hàng</dt><dd>${escapeHtml(customer.id)}</dd></div>
-          <div><dt>Số điện thoại</dt><dd>${escapeHtml(customer.phone)}</dd></div>
-          <div><dt>Tên dịch vụ</dt><dd>${escapeHtml(usage.name)}</dd></div>
-          <div><dt>Ngày bắt đầu</dt><dd>${escapeHtml(usage.startDate || 'Chưa cập nhật')}</dd></div>
-          <div><dt>Kết thúc dự kiến</dt><dd>${escapeHtml(usage.expectedEndDate || 'Chưa cập nhật')}</dd></div>
-          <div><dt>Ngày mua</dt><dd>${escapeHtml(usage.purchaseDate)}</dd></div>
-          <div><dt>Giá dịch vụ</dt><dd>${escapeHtml(formatCurrency(usage.price))}</dd></div>
-        </dl>
-        <div class="progress">Tiến độ: <strong>${completedCount}/${usage.totalSessions} buổi</strong> đã thực hiện · Còn lại <strong>${remainingCount} buổi</strong> · Trạng thái: <strong>${escapeHtml(serviceStatus)}</strong></div>
-        <h2>Hình ảnh theo dõi toàn liệu trình</h2>
-        ${photoMarkup}
-        <footer>Ảnh riêng của từng buổi được quản lý trong chi tiết buổi thực hiện và không nằm trong thư viện ảnh tổng quan này.</footer>
-        <script>window.addEventListener('load', async () => { await Promise.all([...document.images].map((image) => image.decode?.().catch(() => undefined))); setTimeout(() => { window.focus(); window.print(); }, 180); });</script>
-      </body></html>`);
-    printWindow.document.close();
-    setNotice('Trong hộp thoại in, chọn “Lưu dưới dạng PDF” để tải tài liệu về máy.');
-  };
-
-  const toggleMilestone = (milestone) => setUsage((current) => ({
-    ...current,
-    deliveryMilestones: current.deliveryMilestones.includes(milestone)
-      ? current.deliveryMilestones.filter((value) => value !== milestone)
-      : [...current.deliveryMilestones, milestone].sort((first, second) => first - second),
-  }));
-
   const saveSessionResult = () => {
     if (!selectedSession) return;
     updateSession(selectedSession.number, { result: resultDraft.trim() });
     setEditingResult(false);
+  };
+
+  const exportPdf = () => {
+    const hasImages = reportSessions.some((session) => session.beforeImages?.length || session.afterImages?.length)
+      || usage.galleryImages.length > 0;
+    const hasSessionDetails = reportSessions.some((session) => (
+      session.result?.trim()
+      || session.notes?.trim()
+      || session.employee?.trim()
+      || session.techniques?.length
+      || session.products?.length
+    ));
+    if (!reportSessions.length && !hasImages && !hasSessionDetails) {
+      setNotice('Chưa có dữ liệu liệu trình để tạo báo cáo.');
+      return;
+    }
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      setNotice('Trình duyệt đã chặn cửa sổ báo cáo. Hãy cho phép cửa sổ bật lên rồi thử lại.');
+      return;
+    }
+
+    const renderImages = (images, label) => images?.length
+      ? `<div class="photos">${images.map((image) => `<figure><img src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name || label)}"><figcaption>${escapeHtml(image.name || label)}</figcaption></figure>`).join('')}</div>`
+      : `<p class="empty">Chưa ghi nhận hình ảnh ${escapeHtml(label.toLowerCase())}.</p>`;
+
+    const sessionsMarkup = reportSessions.map((session) => {
+      const techniques = session.techniques ?? [];
+      const products = session.products ?? [];
+      const productRows = products.length
+        ? products.map((product, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(product.name || '—')}</td><td>${escapeHtml(product.amount || '—')}</td></tr>`).join('')
+        : '<tr><td colspan="3" class="empty">Chưa ghi nhận mỹ phẩm sử dụng.</td></tr>';
+      return `<section class="session">
+        <div class="session-title"><h2>Buổi ${escapeHtml(session.number)}</h2><span>${escapeHtml(session.date || 'Chưa cập nhật ngày')}</span></div>
+        <div class="meta"><div><b>Trạng thái</b><span>${escapeHtml(session.status || '—')}</span></div><div><b>Nhân viên</b><span>${escapeHtml(session.employee || 'Chưa ghi nhận')}</span></div><div><b>Thời lượng</b><span>${escapeHtml(session.duration ? `${session.duration} phút` : '—')}</span></div><div><b>Xác nhận khách hàng</b><span>${escapeHtml(session.customerConfirmation || '—')}</span></div></div>
+        <h3>Quy trình kỹ thuật</h3>${techniques.length ? `<ol>${techniques.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ol>` : '<p class="empty">Chưa ghi nhận quy trình kỹ thuật.</p>'}
+        <h3>Mỹ phẩm sử dụng</h3><table><thead><tr><th>STT</th><th>Tên mỹ phẩm</th><th>Định lượng</th></tr></thead><tbody>${productRows}</tbody></table>
+        <h3>Kết quả điều trị</h3><p class="result">${escapeHtml(session.result?.trim() || 'Chưa ghi nhận kết quả điều trị.')}</p>
+        ${session.notes?.trim() ? `<h3>Thông tin ghi nhận khác</h3><p class="result">${escapeHtml(session.notes)}</p>` : ''}
+        <div class="photo-columns"><div><h3>Trước điều trị</h3>${renderImages(session.beforeImages, 'trước điều trị')}</div><div><h3>Sau điều trị</h3>${renderImages(session.afterImages, 'sau điều trị')}</div></div>
+      </section>`;
+    }).join('');
+    const overviewImages = usage.galleryImages.length
+      ? `<section class="overview"><h2>Hình ảnh tổng quan liệu trình</h2>${renderImages(usage.galleryImages, 'tổng quan')}</section>`
+      : '';
+    const recordedResults = reportSessions
+      .filter((session) => session.result?.trim())
+      .map((session) => `Buổi ${session.number}: ${session.result.trim()}`)
+      .join('\n');
+    const exportedAt = dateTimeLabel();
+
+    printWindow.document.open();
+    printWindow.document.write(`<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Báo cáo liệu trình - ${escapeHtml(customer.name)}</title><style>
+      @page{size:A4;margin:16mm}*{box-sizing:border-box}body{margin:0;color:#382d26;font:13px/1.5 Arial,sans-serif}h1{margin:0;color:#684a35;font-size:24px}h2{margin:0;color:#684a35;font-size:18px}h3{margin:18px 0 8px;color:#684a35;font-size:14px}p{margin:0;white-space:pre-wrap}.subtitle{margin:4px 0 18px;color:#76685d}.summary{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px;padding:15px;background:#fff8ef;border:1px solid #e8d7c3;border-radius:8px}.summary div,.meta div{display:grid;gap:2px}.summary b,.meta b{color:#80664f;font-size:11px;font-weight:600}.summary span,.meta span{font-weight:600}.progress{margin:12px 0 0;color:#684a35;font-weight:700}.session,.overview{margin-top:22px;padding-top:18px;border-top:1px solid #e8d7c3;break-inside:auto}.overall{margin-top:18px}.overall h2{margin-bottom:8px}.session-title{display:flex;justify-content:space-between;align-items:center;gap:12px}.session-title span{color:#76685d}.meta{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px;padding:12px;background:#faf7f3;border-radius:6px}.empty{color:#8a817a;font-style:italic}.result{padding:10px 12px;background:#faf7f3;border-radius:6px}.photos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:8px}.photos figure{margin:0;break-inside:avoid}.photos img{display:block;width:100%;height:210px;object-fit:contain;background:#f8f4ef;border-radius:5px}.photos figcaption{padding-top:4px;color:#76685d;font-size:10px;overflow-wrap:anywhere}.photo-columns{display:grid;grid-template-columns:1fr 1fr;gap:14px}.photo-columns h3{margin-top:12px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:7px 9px;text-align:left;border:1px solid #e8d7c3}th{background:#fff8ef;color:#684a35}.report-footer{margin-top:24px;padding-top:10px;border-top:1px solid #e8d7c3;color:#76685d;font-size:11px}@media print{.session{break-inside:auto}.session-title,.meta,table tr,.photos figure{break-inside:avoid}img{print-color-adjust:exact}}
+    </style></head><body><header><h1>HÌNH ẢNH LIỆU TRÌNH</h1><p class="subtitle">Báo cáo tổng hợp dữ liệu đã ghi nhận trong quá trình thực hiện</p></header>
+      <section class="summary"><div><b>Khách hàng</b><span>${escapeHtml(customer.name)}</span></div><div><b>Mã khách hàng</b><span>${escapeHtml(customer.id)}</span></div><div><b>Số điện thoại</b><span>${escapeHtml(customer.phone || '—')}</span></div><div><b>Dịch vụ</b><span>${escapeHtml(usage.name)}</span></div><div><b>Giá dịch vụ</b><span>${escapeHtml(formatCurrency(usage.price))}</span></div><div><b>Mã đơn mua</b><span>${escapeHtml(usage.purchaseOrder || '—')}</span></div><div><b>Ngày mua</b><span>${escapeHtml(usage.purchaseDate || 'Chưa cập nhật')}</span></div><div><b>Ngày bắt đầu</b><span>${escapeHtml(usage.startDate || 'Chưa cập nhật')}</span></div><div><b>Kết thúc dự kiến</b><span>${escapeHtml(usage.expectedEndDate || 'Chưa cập nhật')}</span></div><div><b>Trạng thái liệu trình</b><span>${escapeHtml(serviceStatus)}</span></div></section>
+      <p class="progress">Tiến độ: ${completedCount}/${usage.totalSessions} buổi đã hoàn thành · Còn ${remainingCount} buổi</p>
+      <section class="overall"><h2>Kết quả tổng hợp</h2><p class="result">${escapeHtml(recordedResults || 'Chưa có kết quả điều trị được ghi nhận.')}</p></section>
+      ${sessionsMarkup || '<p class="empty" style="margin-top:18px">Chưa có buổi thực hiện nào được ghi nhận.</p>'}${overviewImages}<footer class="report-footer">Ngày xuất báo cáo: ${escapeHtml(exportedAt)}</footer>
+      <script>window.addEventListener('load',()=>{const imgs=[...document.images];Promise.all(imgs.map((img)=>img.decode?.().catch(()=>{})??Promise.resolve())).then(()=>setTimeout(()=>window.print(),150))});</script></body></html>`);
+    printWindow.document.close();
+    setNotice('Báo cáo đã sẵn sàng. Chọn “Lưu dưới dạng PDF” trong hộp thoại in của trình duyệt.');
   };
 
   const showSessionImage = (sessionNumber, side, index) => openLightbox('session', index, sessionNumber, side);
@@ -513,8 +404,6 @@ export default function CustomerActiveServicePage({ customer, onBack }) {
       </section>
     );
   };
-
-  const selectAllChecked = usage.galleryImages.length > 0 && selectedImages.size === usage.galleryImages.length;
 
   return (
     <div className="page-stack customer-active-service-page">
@@ -576,69 +465,45 @@ export default function CustomerActiveServicePage({ customer, onBack }) {
         <header className="customer-active-service-gallery__header">
           <div>
             <h2>Hình ảnh liệu trình</h2>
-            <p>Ảnh tổng quan theo dõi toàn bộ liệu trình. Ảnh trước/sau từng buổi được lưu riêng trong chi tiết buổi.</p>
+            <p>Ảnh, kết quả và thông tin được tổng hợp trực tiếp từ các buổi đã ghi nhận.</p>
           </div>
-          <Button onClick={() => {
-            if (galleryInputRef.current) {
-              delete galleryInputRef.current.dataset.replaceId;
-              galleryInputRef.current.click();
-            }
-          }}><Upload size={16} />Thêm ảnh liệu trình</Button>
-          <input
-            ref={galleryInputRef}
-            className="visually-hidden"
-            type="file"
-            accept="image/png,image/jpeg"
-            multiple
-            onChange={(event) => {
-              const replaceId = event.currentTarget.dataset.replaceId || null;
-              const files = replaceId ? [event.currentTarget.files[0]].filter(Boolean) : event.currentTarget.files;
-              delete event.currentTarget.dataset.replaceId;
-              addTreatmentImages(files, replaceId);
-              event.currentTarget.value = '';
-            }}
-          />
+          <Button onClick={exportPdf}><FileText size={16} />XUẤT BÁO CÁO PDF</Button>
         </header>
 
-        <div className="customer-active-service-gallery__toolbar">
-          <label className="customer-active-service-gallery__select-all">
-            <input type="checkbox" checked={selectAllChecked} onChange={toggleSelectAll} disabled={!usage.galleryImages.length} />
-            Chọn tất cả ảnh
-          </label>
-          <label className="customer-active-service-gallery__format">
-            Định dạng ảnh
-            <select value={imageFormat} onChange={(event) => setImageFormat(event.target.value)}>
-              <option value="image/png">PNG</option>
-              <option value="image/jpeg">JPG</option>
-            </select>
-          </label>
-          <Button variant="secondary" onClick={exportImages} disabled={!selectedGalleryImages.length}><Download size={16} />Tải ảnh đã chọn</Button>
-          <Button variant="secondary" onClick={() => exportPdf(selectedGalleryImages.length ? selectedGalleryImages : usage.galleryImages)}><FileText size={16} />Xuất PDF</Button>
-        </div>
-        <p className="customer-active-service-gallery__export-note">PDF dùng ảnh đã chọn; nếu chưa chọn ảnh, tài liệu sẽ gồm toàn bộ ảnh liệu trình. Khi tải ảnh, trình duyệt có thể yêu cầu cho phép tải nhiều tệp.</p>
-
-        {usage.galleryImages.length ? (
-          <div className="customer-active-service-gallery__grid">
-            {usage.galleryImages.map((image, index) => (
-              <article className="customer-active-service-gallery__item" key={image.id}>
-                <label className="customer-active-service-gallery__checkbox" aria-label={`Chọn ${image.name}`}>
-                  <input type="checkbox" checked={selectedImages.has(image.id)} onChange={() => toggleSelectedImage(image.id)} />
-                </label>
-                <button type="button" className="customer-active-service-gallery__preview" onClick={() => openLightbox('treatment', index)} aria-label={`Xem ảnh ${image.name}`}>
-                  <img src={image.dataUrl} alt={image.name} />
-                </button>
-                <div className="customer-active-service-gallery__caption">
-                  <span title={image.name}>{image.name}</span>
-                  <small>{image.uploadedAt}</small>
+        {reportSessions.length ? (
+          <div className="customer-active-service-session-list">
+            {reportSessions.map((session) => (
+              <article className="customer-active-service-session-card" key={session.number}>
+                <header className="customer-active-service-session-card__header">
+                  <div><h3>Buổi {session.number}</h3><span>{session.date || 'Chưa cập nhật ngày thực hiện'}</span></div>
+                  <StatusBadge tone={statusTone(session.status)}>{session.status}</StatusBadge>
+                </header>
+                <div className="customer-active-service-session-card__photos">
+                  {[
+                    { side: 'beforeImages', label: 'Trước điều trị' },
+                    { side: 'afterImages', label: 'Sau điều trị' },
+                  ].map(({ side, label }) => {
+                    const images = session[side] ?? [];
+                    return (
+                      <section className="customer-active-service-session-card__photo-group" key={side}>
+                        <h4>{label}</h4>
+                        {images.length ? (
+                          <div className="customer-active-service-session-card__photo-grid">
+                            {images.map((image, index) => (
+                              <button type="button" key={image.id} onClick={() => openLightbox('session', index, session.number, side)} aria-label={`Xem ảnh ${label.toLowerCase()} buổi ${session.number}`}>
+                                <img src={image.dataUrl} alt={`${label} - Buổi ${session.number}`} />
+                              </button>
+                            ))}
+                          </div>
+                        ) : <p className="customer-active-service-session-card__empty-photo">Chưa có ảnh</p>}
+                      </section>
+                    );
+                  })}
                 </div>
-                <div className="customer-active-service-gallery__actions">
-                  <button type="button" onClick={() => {
-                    if (galleryInputRef.current) {
-                      galleryInputRef.current.dataset.replaceId = image.id;
-                      galleryInputRef.current.click();
-                    }
-                  }}>Cập nhật</button>
-                  <button type="button" aria-label={`Xóa ${image.name}`} onClick={() => removeTreatmentImage(image.id)}><Trash2 size={15} /></button>
+                <div className="customer-active-service-session-card__details">
+                  <div><strong>Kết quả điều trị</strong><p>{session.result?.trim() || 'Chưa ghi nhận kết quả.'}</p></div>
+                  <div><strong>Nhân viên thực hiện</strong><p>{session.employee || 'Chưa ghi nhận'}</p></div>
+                  {session.notes?.trim() && <div className="customer-active-service-session-card__notes"><strong>Thông tin ghi nhận</strong><p>{session.notes}</p></div>}
                 </div>
               </article>
             ))}
@@ -646,44 +511,33 @@ export default function CustomerActiveServicePage({ customer, onBack }) {
         ) : (
           <div className="customer-active-service-gallery__empty">
             <Images size={34} aria-hidden="true" />
-            <strong>Chưa có hình ảnh liệu trình</strong>
-            <span>Thêm ảnh thực tế để theo dõi quá trình và kết quả.</span>
+            <strong>Chưa có dữ liệu buổi thực hiện</strong>
+            <span>Hình ảnh và kết quả sẽ tự hiển thị sau khi được ghi nhận trong chi tiết buổi.</span>
           </div>
+        )}
+
+        {usage.galleryImages.length > 0 && (
+          <section className="customer-active-service-overview-gallery">
+            <h3>Hình ảnh tổng quan đã lưu</h3>
+            <div className="customer-active-service-gallery__grid">
+              {usage.galleryImages.map((image, index) => (
+                <button type="button" className="customer-active-service-gallery__preview" key={image.id} onClick={() => openLightbox('treatment', index)} aria-label={`Xem ảnh tổng quan ${image.name}`}>
+                  <img src={image.dataUrl} alt={image.name || 'Ảnh tổng quan liệu trình'} />
+                </button>
+              ))}
+            </div>
+          </section>
         )}
       </section>
 
-      <section className="panel customer-active-service-delivery">
-        <div className="customer-active-service-delivery__heading">
-          <div>
-            <h2>Tạo báo cáo theo giai đoạn</h2>
-            <p>Chọn các mốc để hệ thống tạo tài liệu và đưa vào hàng chờ gửi.</p>
-          </div>
-          <span className="customer-active-service-delivery__notice"><Info size={16} />Chưa cấu hình kênh gửi tự động; tài liệu sẽ ở trạng thái chờ gửi.</span>
-        </div>
-        <div className="customer-active-service-delivery__milestones" aria-label="Mốc tạo báo cáo">
-          {Array.from({ length: usage.totalSessions }, (_, index) => index + 1).map((milestone) => (
-            <label key={milestone}>
-              <input type="checkbox" checked={usage.deliveryMilestones.includes(milestone)} onChange={() => toggleMilestone(milestone)} />
-              Sau buổi {milestone}{milestone === usage.totalSessions ? ' · Hoàn thành liệu trình' : ''}
-            </label>
-          ))}
-        </div>
-        <div className="customer-active-service-delivery__history">
-          <h3>Lịch sử tài liệu</h3>
+      <section className="customer-active-service-delivery-status" aria-label="Trạng thái gửi báo cáo Zalo">
+        <div className="customer-active-service-delivery-status__icon"><MessageCircle size={19} /></div>
+        <div className="customer-active-service-delivery-status__content">
+          <div className="customer-active-service-delivery-status__heading"><h2>Gửi báo cáo qua Zalo</h2><StatusBadge tone="warning">Chưa cấu hình</StatusBadge></div>
+          <p>Chưa có kết nối Zalo hoặc lịch gửi tự động. Hệ thống chưa gửi tài liệu qua Zalo.</p>
           {usage.deliveryHistory.length ? (
-            <div className="table-scroll" role="region" aria-label="Lịch sử tạo và gửi tài liệu" tabIndex={0}>
-              <table className="data-table customer-active-service-delivery__table">
-                <thead><tr><th scope="col">Giai đoạn</th><th scope="col">Tài liệu</th><th scope="col">Thời gian</th><th scope="col">Trạng thái</th><th scope="col">Tác vụ</th></tr></thead>
-                <tbody>{usage.deliveryHistory.map((entry) => (
-                  <tr key={entry.id}>
-                    <td>{entry.stage}</td><td>{entry.document}</td><td>{entry.createdAt}</td>
-                    <td><StatusBadge tone="warning">{entry.status}</StatusBadge></td>
-                    <td><button className="table-link" type="button" onClick={() => exportPdf(usage.galleryImages, entry.stage)}>Tải PDF</button></td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            </div>
-          ) : <p className="customer-active-service-delivery__empty">Chưa có mốc nào được hoàn thành để tạo tài liệu.</p>}
+            <small>Lần gửi gần nhất: {usage.deliveryHistory[usage.deliveryHistory.length - 1].createdAt || 'Chưa rõ thời gian'} · {usage.deliveryHistory[usage.deliveryHistory.length - 1].status || 'Chưa rõ trạng thái'}</small>
+          ) : <small>Lịch gửi: Chưa thiết lập · Lịch sử gửi: Chưa có</small>}
         </div>
       </section>
 
@@ -752,15 +606,6 @@ export default function CustomerActiveServicePage({ customer, onBack }) {
               </div>
             </section>
 
-            <section className="customer-service-session-card customer-service-session-card--notes">
-              <h3>Ghi chú</h3>
-              <textarea
-                value={selectedSession.notes || ''}
-                aria-label="Ghi chú của buổi thực hiện"
-                onChange={(event) => updateSession(selectedSession.number, { notes: event.target.value })}
-                placeholder="Nhập ghi chú cho buổi thực hiện..."
-              />
-            </section>
           </div>
         </div>}
       </Modal>
