@@ -8,6 +8,7 @@ import './styles/layout.css';
 import './styles/components.css';
 import './styles/pages.css';
 import './styles/feature-pages.css';
+import './styles/customer-active-service.css';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

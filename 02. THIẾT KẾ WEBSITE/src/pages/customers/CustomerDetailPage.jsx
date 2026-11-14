@@ -6,7 +6,7 @@ import DataTable from '../../components/ui/DataTable.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 
-export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete }) {
+export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete, serviceUsagePath }) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const purchases = customer.purchases ?? [{
     date: '—',
@@ -47,7 +47,7 @@ export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete 
         <section className="panel customer-detail__section">
           <h2>Dịch vụ đang sử dụng</h2>
           <div className="customer-detail__rows">
-            <p><span>Liệu trình chăm sóc da cơ bản</span><Link className="text-link" to="/dich-vu/DV002">Xem chi tiết</Link></p>
+            <p><span>VI KIM SINH HỌC</span><Link className="text-link" to={serviceUsagePath}>Chi tiết</Link></p>
           </div>
         </section>
 

@@ -1,7 +1,20 @@
 import { useEffect } from 'react';
 import { X } from 'lucide-react';
 
-export default function Modal({ open, title, onClose, children, footer, size = 'medium', layer = 1 }) {
+export default function Modal({
+  open,
+  title,
+  onClose,
+  children,
+  footer,
+  size = 'medium',
+  layer = 1,
+  className = '',
+  headerActions,
+  ariaLabel,
+  hideHeader = false,
+  hideClose = false,
+}) {
   useEffect(() => {
     if (!open) return undefined;
 
@@ -16,13 +29,20 @@ export default function Modal({ open, title, onClose, children, footer, size = '
 
   return (
     <div className={`modal-backdrop${layer > 1 ? ` modal-backdrop--layer-${layer}` : ''}`} onMouseDown={(event) => event.target === event.currentTarget && onClose?.()}>
-      <section className={`modal modal--${size}`} role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <header className="modal__header">
+      <section
+        className={`modal modal--${size} ${className}`.trim()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={hideHeader ? ariaLabel || title : undefined}
+        aria-labelledby={hideHeader ? undefined : 'modal-title'}
+      >
+        {!hideHeader && <header className="modal__header">
           <h2 id="modal-title">{title}</h2>
-          <button className="icon-button modal__close" type="button" aria-label="Đóng hộp thoại" onClick={onClose}>
+          {headerActions}
+          {!hideClose && <button className="icon-button modal__close" type="button" aria-label="Đóng hộp thoại" onClick={onClose}>
             <X aria-hidden="true" size={19} />
-          </button>
-        </header>
+          </button>}
+        </header>}
         <div className="modal__body">{children}</div>
         {footer && <footer className="modal__footer">{footer}</footer>}
       </section>

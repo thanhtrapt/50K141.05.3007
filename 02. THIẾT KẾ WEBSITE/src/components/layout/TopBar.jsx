@@ -29,6 +29,10 @@ function getPageTitle(pathname) {
   const section = segments[0];
   const action = segments.at(-1);
 
+  if ((section === 'ho-so-khach-hang' || section === 'khach-hang') && segments[2] === 'dich-vu-dang-su-dung') {
+    return 'Dịch vụ đang sử dụng';
+  }
+
   if (section === 'ho-so-khach-hang' || section === 'khach-hang') {
     if (action === 'tao-moi') return 'Tạo hồ sơ khách hàng';
     if (action === 'chinh-sua') return 'Chỉnh sửa hồ sơ khách hàng';
@@ -57,9 +61,26 @@ function getPageTitle(pathname) {
   return 'Trang chủ';
 }
 
+function getBreadcrumbItems(pathname, pageTitle) {
+  const segments = pathname.split('/').filter(Boolean);
+  const section = segments[0];
+  const isCustomerService = (section === 'khach-hang' || section === 'ho-so-khach-hang')
+    && segments[2] === 'dich-vu-dang-su-dung';
+
+  if (!isCustomerService) return [{ label: 'Quản lý Spa', to: '/trang-chu' }, { label: pageTitle }];
+
+  const basePath = section === 'ho-so-khach-hang' ? '/ho-so-khach-hang' : '/khach-hang';
+  return [
+    { label: 'Quản lý Spa', to: '/trang-chu' },
+    { label: 'Hồ sơ khách hàng', to: `${basePath}/${segments[1]}` },
+    { label: 'Dịch vụ đang sử dụng' },
+  ];
+}
+
 export default function TopBar({ onMenuClick }) {
   const { pathname } = useLocation();
   const pageTitle = getPageTitle(pathname);
+  const breadcrumbs = getBreadcrumbItems(pathname, pageTitle);
 
   return (
     <header className="top-bar">
@@ -72,9 +93,12 @@ export default function TopBar({ onMenuClick }) {
         <Menu aria-hidden="true" size={22} />
       </button>
       <div className="top-bar__breadcrumb" aria-label="Đường dẫn trang">
-        <Link to="/trang-chu">Quản lý Spa</Link>
-        <span aria-hidden="true">&gt;&gt;</span>
-        <span>{pageTitle}</span>
+        {breadcrumbs.map((item, index) => (
+          <span className="top-bar__breadcrumb-part" key={item.label}>
+            {index > 0 && <span aria-hidden="true">&gt;&gt;</span>}
+            {item.to ? <Link to={item.to}>{item.label}</Link> : <span>{item.label}</span>}
+          </span>
+        ))}
       </div>
       <div className="top-bar__actions">
         <div className="top-bar__date">

@@ -219,6 +219,12 @@
   font-size: 17px;
 }
 
+.top-bar__breadcrumb-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .top-bar__breadcrumb a {
   text-decoration: none;
 }

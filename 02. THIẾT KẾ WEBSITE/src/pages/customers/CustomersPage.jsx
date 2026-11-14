@@ -11,6 +11,7 @@ import SearchBox from '../../components/ui/SearchBox.jsx';
 import { customers as initialCustomers } from '../../data/mockData.js';
 import CustomerDetailPage from './CustomerDetailPage.jsx';
 import CustomerFormPage from './CustomerFormPage.jsx';
+import CustomerActiveServicePage from './CustomerActiveServicePage.jsx';
 
 export default function CustomersPage({ recordsOnly = false }) {
   const [items, setItems] = useState(initialCustomers);
@@ -69,9 +70,14 @@ export default function CustomersPage({ recordsOnly = false }) {
       return <FeatureNotFound heading="DANH SÁCH HỒ SƠ KHÁCH HÀNG" message="Không tìm thấy khách hàng phù hợp!" onBack={() => navigate(basePath)} />;
     }
 
+    if (routeParts[1] === 'dich-vu-dang-su-dung') {
+      return <CustomerActiveServicePage key={customerId} customer={selected} onBack={() => navigate(`${basePath}/${customerId}`)} />;
+    }
+
     return (
       <CustomerDetailPage
         customer={selected}
+        serviceUsagePath={`${basePath}/${customerId}/dich-vu-dang-su-dung`}
         onBack={() => navigate(basePath)}
         onEdit={() => openEdit(selected)}
         onDelete={deleteCustomer}
