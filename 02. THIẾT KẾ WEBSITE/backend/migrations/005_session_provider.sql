@@ -1,0 +1,4 @@
+IF COL_LENGTH(N'dbo.CT_DonMua',N'maTK') IS NULL
+  ALTER TABLE dbo.CT_DonMua ADD maTK CHAR(10) NULL;
+IF NOT EXISTS(SELECT 1 FROM sys.foreign_keys WHERE name=N'FK_CT_DonMua_TaiKhoan')
+  ALTER TABLE dbo.CT_DonMua ADD CONSTRAINT FK_CT_DonMua_TaiKhoan FOREIGN KEY(maTK) REFERENCES dbo.TaiKhoan(maTK);

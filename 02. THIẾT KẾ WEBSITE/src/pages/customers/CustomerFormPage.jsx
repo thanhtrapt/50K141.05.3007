@@ -23,7 +23,7 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave }) {
   const [form, setForm] = useState(emptyCustomer);
   const [purchases, setPurchases] = useState([]);
   const [purchaseModalOpen, setPurchaseModalOpen] = useState(false);
-  const [purchaseForm, setPurchaseForm] = useState({ product: products[0]?.id ?? '', quantity: 1, date: new Date().toISOString().slice(0, 10) });
+  const [purchaseForm, setPurchaseForm] = useState({ product: '', quantity: '', date: '' });
 
   useEffect(() => {
     setForm(record
@@ -52,6 +52,7 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave }) {
       total: formatCurrency(product.price * quantity),
     }]);
     setPurchaseModalOpen(false);
+    setPurchaseForm({ product: '', quantity: '', date: '' });
   };
 
   return (
@@ -65,7 +66,7 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave }) {
             <TextField label="Họ và tên *" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Nhập họ và tên" required />
             <TextField label="Ngày sinh *" type="date" value={form.birthday} onChange={(event) => setForm({ ...form, birthday: event.target.value })} required />
             <TextField label="Số điện thoại *" type="tel" inputMode="numeric" pattern="[0-9]{10}" title="Số điện thoại gồm 10 chữ số" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} placeholder="Nhập số điện thoại gồm 10 chữ số" required />
-            <TextField label="Số lần hủy lịch" value="0" readOnly />
+            {record && <TextField label="Số lần hủy lịch" value={record.cancellationCount ?? ''} readOnly />}
           </div>
         </section>
 
@@ -83,7 +84,7 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave }) {
         <section className="panel customer-form__section customer-form__purchases">
           <div className="customer-form__section-heading">
             <h2>Sản phẩm mua thêm</h2>
-            <Button type="button" variant="secondary" onClick={() => setPurchaseModalOpen(true)}>+ Ghi nhận sản phẩm bán lẻ</Button>
+            <Button type="button" variant="secondary" onClick={() => { setPurchaseForm({ product: '', quantity: '', date: '' }); setPurchaseModalOpen(true); }}>+ Ghi nhận sản phẩm bán lẻ</Button>
           </div>
           <DataTable
             columns={[
@@ -115,8 +116,10 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave }) {
       <Modal open={purchaseModalOpen} title="GHI NHẬN SẢN PHẨM BÁN LẺ" onClose={() => setPurchaseModalOpen(false)} size="medium">
         <form className="form-grid" onSubmit={addPurchase}>
           <TextField label="Ngày mua *" type="date" value={purchaseForm.date} onChange={(event) => setPurchaseForm({ ...purchaseForm, date: event.target.value })} required />
-          <SelectField label="Tên sản phẩm *" value={purchaseForm.product} onChange={(event) => setPurchaseForm({ ...purchaseForm, product: event.target.value })} options={products.map((product) => ({ value: product.id, label: product.name }))} required />
+          <SelectField label="Tên sản phẩm *" value={purchaseForm.product} onChange={(event) => setPurchaseForm({ ...purchaseForm, product: event.target.value })} options={[{ value: '', label: 'Chọn sản phẩm' }, ...products.map((product) => ({ value: product.id, label: product.name }))]} required />
           <TextField label="Số lượng *" type="number" min="1" value={purchaseForm.quantity} onChange={(event) => setPurchaseForm({ ...purchaseForm, quantity: event.target.value })} required />
+          {purchaseForm.product && <TextField label="Giá bán" value={formatCurrency(products.find((product) => product.id === purchaseForm.product)?.price ?? 0)} readOnly />}
+          {purchaseForm.product && purchaseForm.quantity !== '' && <TextField label="Thành tiền" value={formatCurrency((products.find((product) => product.id === purchaseForm.product)?.price ?? 0) * Number(purchaseForm.quantity))} readOnly />}
           <div className="modal-form-actions form-grid__wide">
             <Button variant="secondary" onClick={() => setPurchaseModalOpen(false)}>Hủy</Button>
             <Button type="submit">Thêm sản phẩm</Button>

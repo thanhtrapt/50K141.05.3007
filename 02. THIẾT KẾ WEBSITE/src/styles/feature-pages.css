@@ -939,24 +939,42 @@
 }
 
 .inbound-lines-scroll {
-  overflow: visible;
+  width: 100%;
+  overflow-x: auto;
 }
 
 .inbound-lines-table {
-  min-width: 940px;
+  width: 100%;
+  min-width: 0;
   table-layout: fixed;
 }
 
-.inbound-lines-table th:nth-child(1) { width: 25%; }
+.inbound-lines-table th:nth-child(1) { width: 23%; }
 .inbound-lines-table th:nth-child(2) { width: 10%; }
 .inbound-lines-table th:nth-child(3) { width: 13%; }
-.inbound-lines-table th:nth-child(4) { width: 14%; }
-.inbound-lines-table th:nth-child(5) { width: 14%; }
-.inbound-lines-table th:nth-child(6) { width: 18%; }
+.inbound-lines-table th:nth-child(4) { width: 13%; }
+.inbound-lines-table th:nth-child(5) { width: 13%; }
+.inbound-lines-table th:nth-child(6) { width: 22%; }
 .inbound-lines-table th:nth-child(7) { width: 6%; }
 
 .inbound-lines-table td {
   height: 60px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.inbound-lines-table .field__control,
+.inbound-lines-table .product-picker__input-wrap,
+.inbound-lines-table .inbound-lot-trigger {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.inbound-lines-table .inbound-lot-trigger {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .product-picker {
@@ -1135,6 +1153,7 @@
 .lot-picker-table td {
   height: 54px;
   padding: 9px 12px;
+  vertical-align: middle;
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -1579,6 +1598,30 @@
 
 .appointment-delete-confirm__button:hover:not(:disabled) {
   background: #bd3838;
+}
+
+.appointment-empty {
+  margin: 0;
+  padding: 18px;
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.appointment-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1000;
+  padding: 14px 20px;
+  color: #fff;
+  background: #3c7955;
+  border-radius: 9px;
+  box-shadow: 0 8px 28px rgb(28 39 32 / 22%);
+  font-weight: 700;
+}
+
+.appointment-detail-panel {
+  min-height: 0;
 }
 
 @media (min-width: 1360px) {

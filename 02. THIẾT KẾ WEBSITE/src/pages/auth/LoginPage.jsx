@@ -3,6 +3,7 @@ import { Eye, EyeOff, LockKeyhole, UserRound } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import loginReference from '../../../ĐĂNG NHẬP/Desktop - ĐĂNG NHẬP.png';
 import Button from '../../components/ui/Button.jsx';
+import { apiRequest } from '../../api.js';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -12,14 +13,20 @@ export default function LoginPage() {
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState('');
 
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault();
     if (!phone.trim() || !password.trim()) {
       setError('Vui lòng nhập đầy đủ thông tin đăng nhập.');
       return;
     }
     setError('');
-    navigate('/trang-chu');
+    try {
+      const result = await apiRequest('/api/auth/login', { method: 'POST', auth: false, body: { phone: phone.trim(), password } });
+      window.localStorage.setItem('huong-spa-access-token', result.accessToken);
+      navigate('/trang-chu');
+    } catch (requestError) {
+      setError(requestError.message || 'Không thể đăng nhập.');
+    }
   };
 
   return (

@@ -186,32 +186,4 @@ export const outboundRecords = [
   { id: 'PXK-20261002-002', date: '02/10/2026', customer: 'Trần Minh Anh', total: 1480000 },
 ];
 
-export const appointmentEvents = [
-  { id: 'LH001', day: 0, start: '08:30', end: '10:00', customer: 'Nguyễn Ngọc Lan', service: 'Chăm sóc da chuyên sâu', tone: 'mint' },
-  { id: 'LH002', day: 0, start: '14:00', end: '15:30', customer: 'Trần Thanh Hoa', service: 'Massage tinh dầu', tone: 'lavender' },
-  { id: 'LH003', day: 1, start: '09:00', end: '10:00', customer: 'Lê Thu Mai', service: 'Chăm sóc da chuyên sâu', tone: 'mint' },
-  { id: 'LH004', day: 1, start: '16:00', end: '17:30', customer: 'Phạm Thùy Trang', service: 'Tẩy tế bào chết toàn thân', tone: 'rose' },
-  { id: 'LH005', day: 2, start: '08:30', end: '10:00', customer: 'Đỗ Khánh Linh', service: 'Chăm sóc da chuyên sâu', tone: 'mint' },
-  { id: 'LH006', day: 2, start: '11:00', end: '12:00', customer: 'Nguyễn Phương Thảo', service: 'Massage tinh dầu', tone: 'lavender' },
-  { id: 'LH007', day: 2, start: '15:00', end: '16:30', customer: 'Bùi Hải Yến', service: 'Ủ dưỡng trắng toàn thân', tone: 'rose' },
-  { id: 'LH008', day: 3, start: '09:30', end: '11:00', customer: 'Trần Ngọc Hân', phone: '0903 456 789', service: 'Chăm sóc da chuyên sâu', note: 'Da nhạy cảm, ưu tiên sản phẩm dịu nhẹ. Khách muốn tư vấn thêm về dưỡng ẩm sau liệu trình.', tone: 'mint' },
-  { id: 'LH009', day: 3, start: '17:00', end: '18:00', customer: 'Võ Tố Anh', service: 'Chăm sóc da', tone: 'lavender' },
-  { id: 'LH010', day: 4, start: '10:00', end: '11:30', customer: 'Nguyễn Lan Hương', service: 'Massage tinh dầu', tone: 'lavender' },
-  { id: 'LH011', day: 4, start: '14:30', end: '16:00', customer: 'Hoàng Thùy Dung', service: 'Chăm sóc da chuyên sâu', tone: 'mint' },
-  { id: 'LH012', day: 5, start: '09:00', end: '10:30', customer: 'Lê Tường Vy', service: 'Ủ dưỡng trắng toàn thân', tone: 'rose' },
-  { id: 'LH013', day: 5, start: '16:30', end: '18:00', customer: 'Trần Thanh Hà', service: 'Massage tinh dầu', tone: 'lavender' },
-  { id: 'LH014', day: 6, start: '10:30', end: '12:00', customer: 'Phạm Bảo Ngọc', service: 'Chăm sóc da chuyên sâu', tone: 'mint' },
-  { id: 'LH015', day: 6, start: '18:30', end: '20:00', customer: 'Võ Yến Nhi', service: 'Massage thư giãn', tone: 'lavender' },
-];
-
-export const appointmentDays = [
-  { day: 'Thứ Hai', date: '19/10' },
-  { day: 'Thứ Ba', date: '20/10' },
-  { day: 'Thứ Tư', date: '21/10' },
-  { day: 'Thứ Năm', date: '22/10' },
-  { day: 'Thứ Sáu', date: '23/10' },
-  { day: 'Thứ Bảy', date: '24/10' },
-  { day: 'Chủ Nhật', date: '25/10' },
-];
-
 export const formatCurrency = (amount) => `${new Intl.NumberFormat('vi-VN').format(amount)} ₫`;

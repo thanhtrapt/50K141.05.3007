@@ -1,0 +1,1712 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Hương Spa API",
+    "version": "1.0.0",
+    "description": "Đặc tả các API Backend Hương Spa hiện được triển khai. Tài khoản đăng nhập nhận JWT Bearer; quyền OWNER là Chủ Spa, STAFF là Nhân viên. Các webhook n8n dùng Bearer secret riêng và token hành động có chữ ký."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:4000",
+      "description": "Máy phát triển mặc định; thay bằng địa chỉ Backend công khai khi triển khai"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Hệ thống"
+    },
+    {
+      "name": "Đăng nhập"
+    },
+    {
+      "name": "Dịch vụ"
+    },
+    {
+      "name": "Khách hàng và liệu trình"
+    },
+    {
+      "name": "Bán lẻ và đánh giá"
+    },
+    {
+      "name": "Lịch hẹn"
+    },
+    {
+      "name": "Kho mỹ phẩm"
+    },
+    {
+      "name": "Cấu hình và cảnh báo"
+    },
+    {
+      "name": "Webhook"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Hệ thống"
+        ],
+        "summary": "Kiểm tra trạng thái Backend",
+        "security": [],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "Đăng nhập"
+        ],
+        "summary": "Đăng nhập bằng số điện thoại và mật khẩu",
+        "security": [],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Login"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "Đăng nhập"
+        ],
+        "summary": "Lấy tài khoản hiện tại",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/services": {
+      "get": {
+        "tags": [
+          "Dịch vụ"
+        ],
+        "summary": "Danh sách dịch vụ",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Keyword"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Dịch vụ"
+        ],
+        "summary": "Tạo dịch vụ (OWNER)",
+        "x-required-role": "OWNER",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Service"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/services/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Dịch vụ"
+        ],
+        "summary": "Chi tiết dịch vụ",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Dịch vụ"
+        ],
+        "summary": "Cập nhật dịch vụ (OWNER)",
+        "x-required-role": "OWNER",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Service"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Dịch vụ"
+        ],
+        "summary": "Xóa dịch vụ (OWNER)",
+        "x-required-role": "OWNER",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/customers": {
+      "get": {
+        "tags": [
+          "Khách hàng và liệu trình"
+        ],
+        "summary": "Danh sách khách hàng",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Keyword"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Khách hàng và liệu trình"
+        ],
+        "summary": "Tạo khách hàng",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Customer"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/customers/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Khách hàng và liệu trình"
+        ],
+        "summary": "Chi tiết khách hàng",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Khách hàng và liệu trình"
+        ],
+        "summary": "Cập nhật khách hàng",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Customer"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Khách hàng và liệu trình"
+        ],
+        "summary": "Xóa khách hàng",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/customers/{id}/service-history": {
+      "get": {
+        "tags": [
+          "Khách hàng và liệu trình"
+        ],
+        "summary": "Lịch sử sử dụng dịch vụ của khách",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      }
+    },
+    "/api/customers/{id}/service-packages": {
+      "post": {
+        "tags": [
+          "Khách hàng và liệu trình"
+        ],
+        "summary": "Gán liệu trình cho khách",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "serviceId"
+                ],
+                "properties": {
+                  "serviceId": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/service-packages/{id}": {
+      "get": {
+        "tags": [
+          "Khách hàng và liệu trình"
+        ],
+        "summary": "Chi tiết liệu trình, buổi thực hiện và PDF đã lưu",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      }
+    },
+    "/api/service-packages/{packageId}/sessions/{sessionId}/start": {
+      "post": {
+        "tags": [
+          "Khách hàng và liệu trình"
+        ],
+        "summary": "Bắt đầu buổi dịch vụ",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PackageId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          }
+        ],
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Success"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/service-packages/{packageId}/sessions/{sessionId}/complete": {
+      "post": {
+        "tags": [
+          "Khách hàng và liệu trình"
+        ],
+        "summary": "Ghi nhận kết quả buổi và xếp yêu cầu xác nhận khách",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PackageId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "result"
+                ],
+                "properties": {
+                  "result": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "image": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 255
+                  },
+                  "note": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 255
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Success"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/retail-products": {
+      "get": {
+        "tags": [
+          "Bán lẻ và đánh giá"
+        ],
+        "summary": "Danh sách mỹ phẩm bán lẻ",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Keyword"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      }
+    },
+    "/api/customers/{id}/retail-sales": {
+      "post": {
+        "tags": [
+          "Bán lẻ và đánh giá"
+        ],
+        "summary": "Ghi nhận đơn bán mỹ phẩm",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "productId",
+                        "quantity"
+                      ],
+                      "properties": {
+                        "productId": {
+                          "type": "string"
+                        },
+                        "quantity": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Success"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/reviews": {
+      "get": {
+        "tags": [
+          "Bán lẻ và đánh giá"
+        ],
+        "summary": "Danh sách đánh giá",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Keyword"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Bán lẻ và đánh giá"
+        ],
+        "summary": "Tạo đánh giá",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Review"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/reviews/{id}": {
+      "get": {
+        "tags": [
+          "Bán lẻ và đánh giá"
+        ],
+        "summary": "Chi tiết đánh giá",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/appointments/availability": {
+      "get": {
+        "tags": [
+          "Lịch hẹn"
+        ],
+        "summary": "Tìm khung giờ còn trống",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "customerId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/appointments": {
+      "get": {
+        "tags": [
+          "Lịch hẹn"
+        ],
+        "summary": "Danh sách lịch hẹn",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "customerId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Lịch hẹn"
+        ],
+        "summary": "Tạo lịch hẹn (OWNER)",
+        "x-required-role": "OWNER",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "customerId",
+                  "sessionId",
+                  "date",
+                  "startTime"
+                ],
+                "properties": {
+                  "customerId": {
+                    "type": "string"
+                  },
+                  "sessionId": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "startTime": {
+                    "type": "string",
+                    "pattern": "^[0-2][0-9]:[0-5][0-9]$"
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Success"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/appointments/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Lịch hẹn"
+        ],
+        "summary": "Chi tiết lịch hẹn",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Lịch hẹn"
+        ],
+        "summary": "Điều chỉnh lịch hẹn (OWNER)",
+        "x-required-role": "OWNER",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "startTime": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/appointments/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Lịch hẹn"
+        ],
+        "summary": "Hủy lịch hẹn (OWNER)",
+        "x-required-role": "OWNER",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Success"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/appointments/cancellations": {
+      "get": {
+        "tags": [
+          "Lịch hẹn"
+        ],
+        "summary": "Lịch sử hủy lịch hẹn",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      }
+    },
+    "/api/customers/{id}/cancellations": {
+      "get": {
+        "tags": [
+          "Lịch hẹn"
+        ],
+        "summary": "Lịch sử hủy của khách hàng",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      }
+    },
+    "/api/cosmetics": {
+      "get": {
+        "tags": [
+          "Kho mỹ phẩm"
+        ],
+        "summary": "Danh sách mỹ phẩm",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Keyword"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Kho mỹ phẩm"
+        ],
+        "summary": "Tạo mỹ phẩm (OWNER)",
+        "x-required-role": "OWNER",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Cosmetic"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/cosmetics/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Kho mỹ phẩm"
+        ],
+        "summary": "Chi tiết mỹ phẩm",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Kho mỹ phẩm"
+        ],
+        "summary": "Cập nhật mỹ phẩm (OWNER)",
+        "x-required-role": "OWNER",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Cosmetic"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Kho mỹ phẩm"
+        ],
+        "summary": "Ngừng kinh doanh mỹ phẩm (OWNER)",
+        "x-required-role": "OWNER",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      }
+    },
+    "/api/cosmetics/{id}/lots": {
+      "get": {
+        "tags": [
+          "Kho mỹ phẩm"
+        ],
+        "summary": "Các lô của mỹ phẩm",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      }
+    },
+    "/api/lots": {
+      "get": {
+        "tags": [
+          "Kho mỹ phẩm"
+        ],
+        "summary": "Danh sách lô hàng",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      }
+    },
+    "/api/files/images": {
+      "post": {
+        "tags": [
+          "Khách hàng và liệu trình"
+        ],
+        "summary": "Tải ảnh lên (multipart/form-data hoặc base64 JSON; tối đa 8 MB)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "base64",
+                  "mimeType"
+                ],
+                "properties": {
+                  "base64": {
+                    "type": "string",
+                    "contentEncoding": "base64"
+                  },
+                  "mimeType": {
+                    "type": "string",
+                    "enum": [
+                      "image/png",
+                      "image/jpeg",
+                      "image/webp"
+                    ]
+                  },
+                  "originalName": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/alerts": {
+      "get": {
+        "tags": [
+          "Cấu hình và cảnh báo"
+        ],
+        "summary": "Danh sách cảnh báo kho",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      }
+    },
+    "/api/alerts/stock": {
+      "get": {
+        "tags": [
+          "Cấu hình và cảnh báo"
+        ],
+        "summary": "Cảnh báo tồn kho thấp",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      }
+    },
+    "/api/alerts/expiry": {
+      "get": {
+        "tags": [
+          "Cấu hình và cảnh báo"
+        ],
+        "summary": "Cảnh báo hạn sử dụng",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      }
+    },
+    "/api/system-config": {
+      "get": {
+        "tags": [
+          "Cấu hình và cảnh báo"
+        ],
+        "summary": "Danh sách cấu hình hệ thống (OWNER)",
+        "x-required-role": "OWNER",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      }
+    },
+    "/api/system-config/{key}": {
+      "patch": {
+        "tags": [
+          "Cấu hình và cảnh báo"
+        ],
+        "summary": "Cập nhật cấu hình hệ thống (OWNER)",
+        "x-required-role": "OWNER",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/stock-receipts": {
+      "get": {
+        "tags": [
+          "Kho mỹ phẩm"
+        ],
+        "summary": "Danh sách phiếu nhập (OWNER)",
+        "x-required-role": "OWNER",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Kho mỹ phẩm"
+        ],
+        "summary": "Tạo phiếu nhập (OWNER)",
+        "x-required-role": "OWNER",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "supplier": {
+                    "type": "string"
+                  },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/stock-receipts/{id}": {
+      "get": {
+        "tags": [
+          "Kho mỹ phẩm"
+        ],
+        "summary": "Chi tiết phiếu nhập (OWNER)",
+        "x-required-role": "OWNER",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      }
+    },
+    "/api/stock-issues": {
+      "get": {
+        "tags": [
+          "Kho mỹ phẩm"
+        ],
+        "summary": "Danh sách phiếu xuất",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Kho mỹ phẩm"
+        ],
+        "summary": "Tạo phiếu xuất",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Success"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/stock-issues/{id}": {
+      "get": {
+        "tags": [
+          "Kho mỹ phẩm"
+        ],
+        "summary": "Chi tiết phiếu xuất",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          }
+        }
+      }
+    },
+    "/api/webhooks/n8n/session-confirmed": {
+      "post": {
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "n8n báo khách đã xác nhận buổi",
+        "security": [
+          {
+            "webhookSecret": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "confirmationToken",
+                  "packageId",
+                  "sessionId"
+                ],
+                "properties": {
+                  "confirmationToken": {
+                    "type": "string"
+                  },
+                  "packageId": {
+                    "type": "string"
+                  },
+                  "sessionId": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Success"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/webhooks/n8n/review-submitted": {
+      "post": {
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "n8n gửi đánh giá khách vừa nhập",
+        "security": [
+          {
+            "webhookSecret": []
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/ReviewWebhook"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT lấy từ POST /api/auth/login."
+      },
+      "webhookSecret": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Giá trị N8N_WEBHOOK_SECRET được đặt trong Authorization: Bearer ...; token hành động cũng cần nằm trong body."
+      }
+    },
+    "parameters": {
+      "Id": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "PackageId": {
+        "name": "packageId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "SessionId": {
+        "name": "sessionId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Page": {
+        "name": "page",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      },
+      "Keyword": {
+        "name": "keyword",
+        "in": "query",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "requestBodies": {
+      "Login": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "phone",
+                "password"
+              ],
+              "properties": {
+                "phone": {
+                  "type": "string",
+                  "pattern": "^0[0-9]{9}$",
+                  "example": "0912345678"
+                },
+                "password": {
+                  "type": "string",
+                  "minLength": 8,
+                  "maxLength": 20
+                }
+              }
+            }
+          }
+        }
+      },
+      "Service": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "name",
+                "price",
+                "sessions"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "price": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "totalSessions": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sessions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "name",
+                      "technique",
+                      "durationMinutes",
+                      "cosmeticsUsage"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "technique": {
+                        "type": "string"
+                      },
+                      "durationMinutes": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "cosmeticsUsage": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Customer": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "name",
+                "phone",
+                "dateOfBirth"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 50
+                },
+                "phone": {
+                  "type": "string",
+                  "pattern": "^0[0-9]{9}$"
+                },
+                "dateOfBirth": {
+                  "type": "string",
+                  "format": "date"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Cosmetic": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "name",
+                "category",
+                "unit",
+                "salePrice"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "Bán lẻ",
+                    "Dùng cho liệu trình"
+                  ]
+                },
+                "unit": {
+                  "type": "string"
+                },
+                "salePrice": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "image": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "Review": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "customerId",
+                "servicePackageId",
+                "rating",
+                "content"
+              ],
+              "properties": {
+                "customerId": {
+                  "type": "string"
+                },
+                "servicePackageId": {
+                  "type": "string"
+                },
+                "rating": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                },
+                "content": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "image": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 255
+                }
+              }
+            }
+          }
+        }
+      },
+      "ReviewWebhook": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "reviewToken",
+                "rating",
+                "content"
+              ],
+              "properties": {
+                "reviewToken": {
+                  "type": "string"
+                },
+                "rating": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                },
+                "content": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "image": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "Success": {
+        "description": "Yêu cầu thành công",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiSuccess"
+            }
+          }
+        }
+      },
+      "Error": {
+        "description": "Lỗi yêu cầu",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ApiSuccess": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {}
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "VALIDATION_ERROR"
+          },
+          "message": {
+            "type": "string"
+          },
+          "fieldErrors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

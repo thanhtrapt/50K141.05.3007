@@ -18,14 +18,14 @@ function TextAreaField({ label, value, onChange, placeholder, required = false }
 }
 
 export default function ServiceFormPage({ record, nextId, onCancel, onSave }) {
-  const [form, setForm] = useState({ name: '', price: '', sessions: 1, result: '' });
+  const [form, setForm] = useState({ name: '', price: '', sessions: '', result: '' });
   const [sessionDetails, setSessionDetails] = useState([createSession()]);
   const [entryErrors, setEntryErrors] = useState({});
 
   useEffect(() => {
     setForm(record
       ? { name: record.name, price: String(record.price), sessions: Number(record.sessions), result: record.result ?? '' }
-      : { name: '', price: '', sessions: 1, result: '' });
+      : { name: '', price: '', sessions: '', result: '' });
     const sourceSessions = record?.sessionDetails ?? [];
     const detailsCount = Number(record?.sessions) || 1;
     setSessionDetails(Array.from({ length: detailsCount }, (_, index) => sourceSessions[index] ?? createSession()));

@@ -782,7 +782,15 @@
 
 .calendar-day-header.is-today {
   color: #a4672c;
-  background: #f8e9c9;
+  background: #f3e3c3;
+  font-weight: 700;
+}
+
+.calendar-day-header.is-today small,
+.calendar-day-header.is-today strong,
+.calendar-day-header.is-today span {
+  color: inherit;
+  font-weight: 700;
 }
 
 .calendar-time-column {
@@ -959,6 +967,9 @@
 }
 
 .line-items-table td .field__control {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   min-height: 36px;
   padding: 6px 8px;
   font-size: 13px;

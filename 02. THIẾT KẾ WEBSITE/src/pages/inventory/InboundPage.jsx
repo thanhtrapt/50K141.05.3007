@@ -18,7 +18,7 @@ let nextLineId = 1;
 const units = ['Chai', 'Lọ', 'Tuýp', 'Hộp', 'Gói'];
 
 function blankLine() {
-  return { id: `inbound-line-${nextLineId++}`, productId: '', productQuery: '', unit: '', price: '0', quantity: '0', lots: [] };
+  return { id: `inbound-line-${nextLineId++}`, productId: '', productQuery: '', unit: '', price: '', quantity: '', lots: [] };
 }
 
 function initialLotCatalog() {
@@ -37,18 +37,19 @@ function formatDate(value) {
 }
 
 function toLotCode(date, suffix) {
-  if (!date) return `041026-${suffix}`;
+  if (!date) return '';
   const [year, month, day] = date.split('-');
   return `${day}${month}${year.slice(-2)}-${suffix}`;
 }
 
 function initialForm(records) {
+  const today = new Date().toISOString().slice(0, 10);
   return {
-    date: '2026-10-30',
-    supplier: 'Lê Thị Thu Hương',
-    paymentStatus: 'Chưa thanh toán',
+    date: '',
+    supplier: '',
+    paymentStatus: '',
     items: [blankLine()],
-    code: `PNK-20261030-${String(records.length + 1).padStart(3, '0')}`,
+    code: `PNK-${today.replaceAll('-', '')}-${String(records.length + 1).padStart(3, '0')}`,
   };
 }
 
@@ -80,7 +81,8 @@ export default function InboundPage() {
   const visibleRecords = useMemo(() => records.filter((item) => item.id.toLowerCase().includes(query.toLowerCase())), [records, query]);
   const pageCount = Math.max(1, Math.ceil(visibleRecords.length / 5));
   const pageRecords = visibleRecords.slice((page - 1) * 5, page * 5);
-  const total = form.items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
+  const hasComputedTotal = form.items.some((item) => item.price !== '' && item.quantity !== '');
+  const total = form.items.reduce((sum, item) => sum + (item.price !== '' && item.quantity !== '' ? Number(item.price) * Number(item.quantity) : 0), 0);
 
   const updateLine = (lineId, updates) => setForm((current) => ({
     ...current,
@@ -98,8 +100,8 @@ export default function InboundPage() {
       productId: product.id,
       productQuery: product.name,
       unit: product.unit || 'Chai',
-      price: String(product.price || 0),
-      quantity: '0',
+      price: '',
+      quantity: '',
       lots: [],
     });
     setOpenProductId(null);
@@ -254,10 +256,10 @@ export default function InboundPage() {
                             )}
                           </div>
                         </td>
-                        <td><span className="form-readonly">{item.unit || matchedProduct?.unit || ''}</span></td>
-                        <td><input className="field__control inbound-line-number" aria-label="Giá nhập" type="number" min="0" value={item.price} onChange={(event) => updateLine(item.id, { price: event.target.value })} /></td>
-                        <td><input className="field__control inbound-line-number" aria-label="Số lượng nhập" type="number" min="0" value={item.quantity} onChange={(event) => updateLine(item.id, { quantity: event.target.value })} /></td>
-                        <td><span className="form-readonly inbound-line-total">{formatCurrency((Number(item.price) || 0) * (Number(item.quantity) || 0))}</span></td>
+                        <td><span className="form-readonly">{item.productId ? (item.unit || matchedProduct?.unit || 'Chai') : ''}</span></td>
+                        <td><input className="field__control inbound-line-number" aria-label="Giá nhập" placeholder="Nhập giá nhập" type="number" min="0" value={item.price} onChange={(event) => updateLine(item.id, { price: event.target.value })} /></td>
+                        <td><input className="field__control inbound-line-number" aria-label="Số lượng nhập" placeholder="Nhập số lượng" type="number" min="1" value={item.quantity} onChange={(event) => updateLine(item.id, { quantity: event.target.value })} /></td>
+                        <td><span className="form-readonly inbound-line-total">{item.price !== '' && item.quantity !== '' ? formatCurrency(Number(item.price) * Number(item.quantity)) : '—'}</span></td>
                         <td><button className="table-link inbound-lot-trigger" type="button" onClick={() => openLots(item)}>{item.lots.length ? item.lots.map((lot) => lot.id).join(', ') : 'Chọn lô nhập hàng'}</button></td>
                         <td><button className="icon-button line-item-remove" type="button" aria-label="Xóa sản phẩm" disabled={form.items.length === 1} onClick={() => setForm((current) => ({ ...current, items: current.items.filter((line) => line.id !== item.id) }))}><Trash2 size={16} /></button></td>
                       </tr>
@@ -267,7 +269,7 @@ export default function InboundPage() {
               </table>
             </div>
             <div className="inbound-add-line"><Button type="button" variant="secondary" onClick={() => setForm((current) => ({ ...current, items: [...current.items, blankLine()] }))}><Plus size={17} />Thêm sản phẩm</Button></div>
-            <div className="inventory-total"><strong>Tổng tiền nhập</strong><b>{formatCurrency(total)}</b></div>
+            <div className="inventory-total"><strong>Tổng tiền nhập</strong><b>{hasComputedTotal ? formatCurrency(total) : '—'}</b></div>
             {formError && <p className="field__error inbound-form-error" role="alert">{formError}</p>}
             <div className="form-actions"><Button type="button" variant="secondary" onClick={() => navigate('/phieu-nhap-kho')}>Hủy</Button><Button type="submit">Lưu</Button></div>
           </form>

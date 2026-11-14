@@ -1,21 +1,44 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, NotebookPen, Pencil, Plus, Trash2, X } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router-dom';
 import Button from '../../components/ui/Button.jsx';
-import FeatureNotFound from '../../components/ui/FeatureNotFound.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import PageListToolbar from '../../components/ui/PageListToolbar.jsx';
 import SearchBox from '../../components/ui/SearchBox.jsx';
 import SelectField from '../../components/ui/SelectField.jsx';
 import TextField from '../../components/ui/TextField.jsx';
-import { appointmentDays, appointmentEvents } from '../../data/mockData.js';
+import { apiRequest } from '../../api.js';
 
 const halfHourLabels = Array.from({ length: 25 }, (_, index) => {
   const totalMinutes = 8 * 60 + index * 30;
   return `${String(Math.floor(totalMinutes / 60)).padStart(2, '0')}:${String(totalMinutes % 60).padStart(2, '0')}`;
 });
-const baseMonday = new Date(2026, 9, 19);
+const emptyAppointment = { customer: '', phone: '', service: '', date: '', start: '', end: '', note: '' };
+
+function todayInVietnam() {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return new Date(Number(values.year), Number(values.month) - 1, Number(values.day), 12);
+}
+
+function dateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function mondayOf(date) {
+  const result = new Date(date);
+  result.setDate(result.getDate() - ((result.getDay() + 6) % 7));
+  return result;
+}
+
+function appointmentEndTime(services, serviceName, startTime) {
+  if (!serviceName || !startTime) return '';
+  const serviceIndex = services.findIndex((service) => service.name === serviceName);
+  const duration = serviceIndex >= 0 ? Number(services[serviceIndex].durationMinutes) || 60 : 60;
+  const [hours, minutes] = startTime.split(':').map(Number);
+  const endMinutes = hours * 60 + minutes + duration;
+  return `${String(Math.floor(endMinutes / 60) % 24).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`;
+}
 
 function dateLabel(date) {
   return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -27,47 +50,81 @@ function timePosition(value) {
 }
 
 export default function AppointmentsPage() {
-  const [events, setEvents] = useState(appointmentEvents);
+  const [events, setEvents] = useState([]);
   const [query, setQuery] = useState('');
   const [weekShift, setWeekShift] = useState(0);
+  const [today, setToday] = useState(todayInVietnam);
+  const [loadError, setLoadError] = useState('');
+  const [toast, setToast] = useState('');
+  const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [noteEditorOpen, setNoteEditorOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
-  const [appointmentForm, setAppointmentForm] = useState({ customer: '', phone: '', service: '', date: '2026-10-21', start: '14:00', end: '15:00', note: '' });
+  const [appointmentForm, setAppointmentForm] = useState(emptyAppointment);
+  const [services, setServices] = useState([]);
+  const [servicesError, setServicesError] = useState('');
   const [viewMode, setViewMode] = useState('Tuần');
-  const location = useLocation();
-  const navigate = useNavigate();
-  const appointmentId = location.pathname.split('/').filter(Boolean)[1];
+  const [selectedAppointment, setSelectedAppointment] = useState(null);
+  const baseMonday = useMemo(() => {
+    const monday = mondayOf(today);
+    monday.setDate(monday.getDate() + weekShift * 7);
+    return monday;
+  }, [today, weekShift]);
 
-  const days = useMemo(() => appointmentDays.map((day, index) => {
+  const days = useMemo(() => Array.from({ length: 7 }, (_, index) => {
     const date = new Date(baseMonday);
-    date.setDate(date.getDate() + weekShift * 7 + index);
-    return { ...day, date: dateLabel(date), isToday: weekShift === 0 && index === 2 };
-  }), [weekShift]);
-  const visibleEvents = useMemo(
-    () => events.filter((event) => `${event.customer} ${event.service}`.toLowerCase().includes(query.toLowerCase())),
-    [events, query],
-  );
-  const rangeLabel = `${days[0].date} – ${days[6].date}/2026`;
-  const selectedAppointment = appointmentId ? events.find((event) => event.id === appointmentId) : null;
-  const selectedAppointmentDay = selectedAppointment ? days[selectedAppointment.day] ?? days[0] : null;
+    date.setDate(date.getDate() + index);
+    const weekday = new Intl.DateTimeFormat('vi-VN', { weekday: 'long', timeZone: 'Asia/Ho_Chi_Minh' }).format(date);
+    return { day: weekday.charAt(0).toLocaleUpperCase('vi-VN') + weekday.slice(1), date: dateLabel(date), key: dateKey(date), isToday: dateKey(date) === dateKey(today) };
+  }), [baseMonday, today]);
+  const fromDate = days[0].key;
+  const toDate = days[6].key;
+  const rangeLabel = `${days[0].date} – ${days[6].date}/${baseMonday.getFullYear()}`;
+  const visibleEvents = events;
   const selectedAppointmentDuration = selectedAppointment
     ? (Number(selectedAppointment.end.slice(0, 2)) * 60 + Number(selectedAppointment.end.slice(3)))
       - (Number(selectedAppointment.start.slice(0, 2)) * 60 + Number(selectedAppointment.start.slice(3)))
     : 0;
-  const selectedAppointmentDateParts = selectedAppointmentDay?.date.split('/') ?? [];
 
-  if (appointmentId && !selectedAppointment) {
-    return <FeatureNotFound heading="XEM LỊCH HẸN" message="Không tìm thấy lịch hẹn phù hợp!" onBack={() => navigate('/lich-hen')} />;
-  }
+  useEffect(() => {
+    let active = true;
+    const params = new URLSearchParams({ startDate: fromDate, endDate: toDate, limit: '100' });
+    if (query.trim()) params.set('keyword', query.trim());
+    apiRequest(`/api/appointments?${params.toString()}`).then((result) => {
+      if (!active) return;
+      setEvents((result.data ?? []).map((appointment) => ({
+        id: appointment.id,
+        date: appointment.date,
+        day: Math.max(0, days.findIndex((day) => day.key === appointment.date)),
+        start: appointment.startTime,
+        end: appointment.endTime,
+        customer: appointment.customerName ?? '',
+        phone: appointment.customerPhone ?? '',
+        service: appointment.sessionName ?? '',
+        note: appointment.note ?? '',
+        status: appointment.status,
+        customerId: appointment.customerId,
+        sessionId: appointment.sessionId,
+        tone: 'mint',
+      })));
+      setLoadError('');
+    }).catch((error) => { if (active) { setEvents([]); setLoadError(error.message); } });
+    return () => { active = false; };
+  }, [fromDate, toDate, query, days]);
 
-  const appointmentDateValue = (appointment) => {
-    const date = new Date(baseMonday);
-    date.setDate(date.getDate() + weekShift * 7 + appointment.day);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  };
+  useEffect(() => {
+    let active = true;
+    apiRequest('/api/services?limit=100').then(async (result) => {
+      const detailed = await Promise.all((result.data ?? []).map(async (service) => {
+        const item = await apiRequest(`/api/services/${service.id}`);
+        return { ...service, durationMinutes: Number(item.sessions?.[0]?.durationMinutes) || 60 };
+      }));
+      if (active) { setServices(detailed); setServicesError(''); }
+    }).catch((error) => { if (active) { setServices([]); setServicesError(error.message); } });
+    return () => { active = false; };
+  }, []);
 
   const openEdit = (appointment) => {
     setEditingId(appointment.id);
@@ -75,7 +132,7 @@ export default function AppointmentsPage() {
       customer: appointment.customer,
       phone: appointment.phone || '',
       service: appointment.service,
-      date: appointmentDateValue(appointment),
+      date: appointment.date,
       start: appointment.start,
       end: appointment.end,
       note: appointment.note || '',
@@ -83,33 +140,43 @@ export default function AppointmentsPage() {
     setFormOpen(true);
   };
 
-  const createAppointment = (event) => {
+  const openCreate = () => {
+    setEditingId(null);
+    setAppointmentForm(emptyAppointment);
+    setFormOpen(true);
+  };
+
+  const createAppointment = async (event) => {
     event.preventDefault();
-    const dayDate = new Date(`${appointmentForm.date}T00:00:00`);
-    const monday = new Date(baseMonday);
-    monday.setDate(monday.getDate() + weekShift * 7);
-    const dayIndex = Math.max(0, Math.min(6, Math.round((dayDate - monday) / 86400000)));
-    const updatedAppointment = {
-      day: dayIndex,
-      start: appointmentForm.start,
-      end: appointmentForm.end,
-      customer: appointmentForm.customer,
-      phone: appointmentForm.phone,
-      service: appointmentForm.service,
-      note: appointmentForm.note,
-      tone: 'mint',
-    };
     if (editingId) {
-      setEvents((current) => current.map((item) => item.id === editingId ? { ...item, ...updatedAppointment } : item));
+      try {
+        await apiRequest(`/api/appointments/${editingId}`, { method: 'PUT', body: { date: appointmentForm.date, startTime: appointmentForm.start, note: appointmentForm.note } });
+        setToast('Cập nhật thông tin thành công!');
+        window.setTimeout(() => setToast(''), 4000);
+        const params = new URLSearchParams({ startDate: fromDate, endDate: toDate, limit: '100' });
+        if (query.trim()) params.set('keyword', query.trim());
+        const refreshed = await apiRequest(`/api/appointments?${params.toString()}`);
+        setEvents((refreshed.data ?? []).map((appointment) => ({ id: appointment.id, date: appointment.date, start: appointment.startTime, end: appointment.endTime,
+          customer: appointment.customerName ?? '', phone: appointment.customerPhone ?? '', service: appointment.sessionName ?? '', note: appointment.note ?? '', status: appointment.status, tone: 'mint' })));
+      } catch (error) { setLoadError(error.message); return; }
       setEditingId(null);
     } else {
-      setEvents((current) => [...current, {
-        ...updatedAppointment,
-        id: `LH${String(current.length + 1).padStart(3, '0')}`,
-      }]);
+      try {
+        await apiRequest('/api/appointments', { method: 'POST', body: {
+          customerPhone: appointmentForm.phone.replace(/\D/g, ''),
+          serviceName: appointmentForm.service,
+          date: appointmentForm.date,
+          startTime: appointmentForm.start,
+          note: appointmentForm.note,
+        } });
+        const params = new URLSearchParams({ startDate: fromDate, endDate: toDate, limit: '100' });
+        const refreshed = await apiRequest(`/api/appointments?${params.toString()}`);
+        setEvents((refreshed.data ?? []).map((appointment) => ({ id: appointment.id, date: appointment.date, start: appointment.startTime, end: appointment.endTime,
+          customer: appointment.customerName ?? '', phone: appointment.customerPhone ?? '', service: appointment.sessionName ?? '', note: appointment.note ?? '', status: appointment.status, tone: 'mint' })));
+      } catch (error) { setLoadError(error.message); return; }
     }
     setFormOpen(false);
-    setAppointmentForm({ customer: '', phone: '', service: '', date: '2026-10-21', start: '14:00', end: '15:00', note: '' });
+    setAppointmentForm(emptyAppointment);
   };
 
   return (
@@ -119,11 +186,11 @@ export default function AppointmentsPage() {
       <PageListToolbar
         className="appointment-toolbar"
         search={<SearchBox value={query} onChange={setQuery} placeholder="Nhập tên khách hàng cần tìm..." className="appointment-search" />}
-        actions={<Button onClick={() => setFormOpen(true)}><Plus size={18} />Tạo lịch hẹn</Button>}
+        actions={<Button onClick={openCreate}><Plus size={18} />Tạo lịch hẹn</Button>}
       />
-      <div className="appointment-summary"><CalendarDays size={15} /> {visibleEvents.length} lịch hẹn trong tuần · {visibleEvents.filter((event) => event.day === 2).length} lịch hẹn hôm nay</div>
+      <div className="appointment-summary"><CalendarDays size={15} /> {visibleEvents.length} lịch hẹn trong tuần · {visibleEvents.filter((event) => event.date === dateKey(today)).length} lịch hẹn hôm nay</div>
       <div className="calendar-toolbar">
-        <button type="button" className="calendar-today" onClick={() => setWeekShift(0)}>Hôm nay</button>
+        <button type="button" className="calendar-today" onClick={() => { setToday(todayInVietnam()); setWeekShift(0); }}>Hôm nay</button>
         <div className="calendar-stepper">
           <button type="button" aria-label="Tuần trước" onClick={() => setWeekShift((value) => value - 1)}><ChevronLeft size={18} /></button>
           <button type="button" aria-label="Tuần sau" onClick={() => setWeekShift((value) => value + 1)}><ChevronRight size={18} /></button>
@@ -136,16 +203,16 @@ export default function AppointmentsPage() {
       <div className="calendar-scroll" role="region" aria-label="Lịch hẹn trong tuần" tabIndex={0}>
         <div className={`appointment-calendar${viewMode === 'Ngày' ? ' appointment-calendar--day' : ''}`}>
           <div className="calendar-corner">GMT+7</div>
-          {days.map((day) => <div className={`calendar-day-header${day.isToday ? ' is-today' : ''}`} key={day.day}>
-            <small>{day.day}</small><strong>{day.date}</strong><span>{visibleEvents.filter((event) => event.day === days.indexOf(day)).length} lịch</span>
+          {days.map((day) => <div className={`calendar-day-header${day.isToday ? ' is-today' : ''}`} key={day.key}>
+            <small>{day.day}</small><strong>{day.date}</strong><span>{visibleEvents.filter((event) => event.date === day.key).length} lịch</span>
           </div>)}
           <div className="calendar-time-column">
             {halfHourLabels.map((time) => <div className="calendar-time-slot" key={time}>{time}</div>)}
           </div>
-          {days.map((day, dayIndex) => (
-            <div className={`calendar-day-column${day.isToday ? ' is-today' : ''}`} key={day.day}>
+          {days.map((day) => (
+            <div className={`calendar-day-column${day.isToday ? ' is-today' : ''}`} key={day.key}>
               {halfHourLabels.map((time) => <div className="calendar-slot" key={time} />)}
-              {visibleEvents.filter((event) => event.day === dayIndex).map((event) => {
+              {visibleEvents.filter((event) => event.date === day.key).map((event) => {
                 const top = timePosition(event.start) * 23;
                 const height = Math.max(42, (timePosition(event.end) - timePosition(event.start)) * 23 - 4);
                 return (
@@ -154,7 +221,7 @@ export default function AppointmentsPage() {
                     key={event.id}
                     style={{ top, height }}
                     type="button"
-                    onClick={() => navigate(`/lich-hen/${event.id}`)}
+                    onClick={() => setSelectedAppointment(event)}
                   >
                     <strong>{event.start}–{event.end}</strong>
                     <span>{event.customer}</span>
@@ -167,12 +234,15 @@ export default function AppointmentsPage() {
         </div>
       </div>
 
+      {loadError && <p className="field__error" role="alert">{loadError}</p>}
+      {!loadError && visibleEvents.length === 0 && <p className="appointment-empty">{query.trim() ? 'Không tìm thấy lịch hẹn phù hợp!' : 'Không có lịch hẹn trong tuần này.'}</p>}
       </section>
 
-      {selectedAppointment && <aside className="appointment-detail-panel" aria-labelledby="appointment-detail-title">
+      <Modal open={Boolean(selectedAppointment)} title="CHI TIẾT LỊCH HẸN" onClose={() => setSelectedAppointment(null)} size="large">
+        {selectedAppointment && <div className="appointment-detail-panel" aria-labelledby="appointment-detail-title">
         <header className="appointment-detail-panel__header">
           <h2 id="appointment-detail-title">CHI TIẾT LỊCH HẸN</h2>
-          <button type="button" className="appointment-detail-panel__close" aria-label="Quay lại danh sách lịch hẹn" onClick={() => navigate('/lich-hen')}>
+          <button type="button" className="appointment-detail-panel__close" aria-label="Đóng chi tiết lịch hẹn" onClick={() => setSelectedAppointment(null)}>
             <X size={21} />
           </button>
         </header>
@@ -180,12 +250,12 @@ export default function AppointmentsPage() {
         <div className="appointment-detail-panel__date">
           <CalendarDays aria-hidden="true" size={23} />
           <div className="appointment-detail-panel__date-copy">
-            <strong>{Number(selectedAppointmentDateParts[0])} tháng {Number(selectedAppointmentDateParts[1])}, 2026</strong>
+            <strong>{selectedAppointment.date}</strong>
             <span>{selectedAppointment.start}–{selectedAppointment.end} · {selectedAppointmentDuration} phút</span>
           </div>
           <div className="appointment-detail-panel__actions">
-            <Button variant="secondary" onClick={() => openEdit(selectedAppointment)}><Pencil size={15} />Chỉnh sửa</Button>
-            <Button variant="secondary" className="appointment-detail-panel__delete" onClick={() => setConfirmDeleteOpen(true)}><Trash2 size={15} />Xóa</Button>
+            <Button variant="secondary" onClick={() => openEdit(selectedAppointment)}><Pencil size={15} />Điều chỉnh lịch hẹn</Button>
+            <Button variant="secondary" className="appointment-detail-panel__delete" onClick={() => setConfirmDeleteOpen(true)}><Trash2 size={15} />Hủy lịch hẹn</Button>
           </div>
         </div>
 
@@ -195,7 +265,7 @@ export default function AppointmentsPage() {
           <div><dt>Tên dịch vụ</dt><dd>{selectedAppointment.service}</dd></div>
           <div><dt>Giờ đặt lịch</dt><dd>{selectedAppointment.start}</dd></div>
           <div><dt>Giờ kết thúc</dt><dd>{selectedAppointment.end}</dd></div>
-          <div><dt>Ngày</dt><dd>{selectedAppointmentDay.day}, {selectedAppointmentDay.date}/2026</dd></div>
+          <div><dt>Ngày</dt><dd>{selectedAppointment.date}</dd></div>
         </dl>
 
         <section className="appointment-detail-panel__note">
@@ -218,35 +288,45 @@ export default function AppointmentsPage() {
           setNoteDraft(selectedAppointment.note || '');
           setNoteEditorOpen(true);
         }}><NotebookPen size={17} />Thêm ghi chú</Button>}
-      </aside>}
+        </div>}
+      </Modal>
 
-      <Modal open={formOpen} title={editingId ? 'CHỈNH SỬA LỊCH HẸN' : 'TẠO LỊCH HẸN'} onClose={() => { setFormOpen(false); setEditingId(null); }} size="large">
-        <form className="form-grid" onSubmit={createAppointment}>
-          <TextField label="Tên khách hàng *" value={appointmentForm.customer} onChange={(event) => setAppointmentForm({ ...appointmentForm, customer: event.target.value })} required />
-          <TextField label="Số điện thoại *" type="tel" value={appointmentForm.phone} onChange={(event) => setAppointmentForm({ ...appointmentForm, phone: event.target.value })} required />
-          <SelectField label="Dịch vụ *" value={appointmentForm.service} onChange={(event) => setAppointmentForm({ ...appointmentForm, service: event.target.value })} options={[{ value: '', label: 'Chọn dịch vụ' }, 'Chăm sóc da chuyên sâu', 'Massage tinh dầu', 'Phục hồi da']} required />
+      <Modal open={formOpen} title={editingId ? 'ĐIỀU CHỈNH LỊCH HẸN' : 'TẠO LỊCH HẸN'} onClose={() => setConfirmDiscardOpen(true)} size="large">
+        <form className="form-grid" onSubmit={createAppointment} autoComplete="off">
+          <TextField label="Tên khách hàng *" value={appointmentForm.customer} onChange={(event) => setAppointmentForm({ ...appointmentForm, customer: event.target.value })} autoComplete="off" readOnly={Boolean(editingId)} required />
+          <TextField label="Số điện thoại *" type="tel" value={appointmentForm.phone} onChange={(event) => setAppointmentForm({ ...appointmentForm, phone: event.target.value })} autoComplete="off" readOnly={Boolean(editingId)} required />
+          <SelectField label="Dịch vụ *" value={appointmentForm.service} onChange={(event) => setAppointmentForm((current) => ({ ...current, service: event.target.value, end: appointmentEndTime(services, event.target.value, current.start) }))} options={[{ value: '', label: services.length ? 'Chọn dịch vụ' : 'Chưa có dịch vụ' }, ...services.map((service) => service.name)]} disabled={Boolean(editingId) || services.length === 0} required />
+          {servicesError && <p className="field__error form-grid__wide" role="alert">{servicesError}</p>}
           <TextField label="Ngày hẹn *" type="date" value={appointmentForm.date} onChange={(event) => setAppointmentForm({ ...appointmentForm, date: event.target.value })} required />
-          <TextField label="Giờ hẹn *" type="time" value={appointmentForm.start} onChange={(event) => setAppointmentForm({ ...appointmentForm, start: event.target.value })} required />
-          <TextField label="Giờ kết thúc *" type="time" value={appointmentForm.end} onChange={(event) => setAppointmentForm({ ...appointmentForm, end: event.target.value })} required />
+          <TextField label="Giờ hẹn *" type="time" value={appointmentForm.start} onChange={(event) => setAppointmentForm((current) => ({ ...current, start: event.target.value, end: appointmentEndTime(services, current.service, event.target.value) }))} required />
+          <TextField label="Giờ kết thúc *" type="time" value={appointmentForm.end} readOnly required />
           <label className="field form-grid__wide"><span className="field__label">Ghi chú</span><textarea className="field__control appointment-form__note" value={appointmentForm.note} onChange={(event) => setAppointmentForm({ ...appointmentForm, note: event.target.value })} /></label>
           <div className="modal-form-actions form-grid__wide">
-            <Button variant="secondary" onClick={() => { setFormOpen(false); setEditingId(null); }}>Hủy</Button>
+            <Button variant="secondary" onClick={() => setConfirmDiscardOpen(true)}>Hủy</Button>
             <Button type="submit">Lưu</Button>
           </div>
         </form>
       </Modal>
 
-      <Modal open={confirmDeleteOpen} title="XÓA LỊCH HẸN" onClose={() => setConfirmDeleteOpen(false)}>
-        <p className="appointment-delete-confirm">Bạn có chắc chắn muốn xóa lịch hẹn của {selectedAppointment?.customer}?</p>
+      <Modal open={confirmDeleteOpen} title="HỦY LỊCH HẸN" onClose={() => setConfirmDeleteOpen(false)}>
+        <p className="appointment-delete-confirm">Bạn có chắc chắn muốn hủy lịch hẹn của {selectedAppointment?.customer}?</p>
         <div className="modal-form-actions">
           <Button variant="secondary" onClick={() => setConfirmDeleteOpen(false)}>Hủy</Button>
-          <Button className="appointment-delete-confirm__button" onClick={() => {
-            setEvents((current) => current.filter((item) => item.id !== selectedAppointment?.id));
-            setConfirmDeleteOpen(false);
-            navigate('/lich-hen');
-          }}>Xóa lịch hẹn</Button>
+          <Button className="appointment-delete-confirm__button" onClick={async () => {
+            try {
+              await apiRequest(`/api/appointments/${selectedAppointment.id}/cancel`, { method: 'POST', body: { reason: '' } });
+              setEvents((current) => current.filter((item) => item.id !== selectedAppointment.id));
+              setSelectedAppointment(null);
+              setConfirmDeleteOpen(false);
+            } catch (error) { setLoadError(error.message); setConfirmDeleteOpen(false); }
+          }}>Hủy lịch hẹn</Button>
         </div>
       </Modal>
+      <Modal open={confirmDiscardOpen} title="HỦY THAO TÁC ĐIỀU CHỈNH" onClose={() => setConfirmDiscardOpen(false)}>
+        <p className="appointment-delete-confirm">Bạn có chắc chắn muốn hủy thao tác điều chỉnh lịch hẹn?</p>
+        <div className="modal-form-actions"><Button variant="secondary" onClick={() => setConfirmDiscardOpen(false)}>Tiếp tục chỉnh sửa</Button><Button onClick={() => { setConfirmDiscardOpen(false); setFormOpen(false); setEditingId(null); setAppointmentForm(emptyAppointment); }}>Đồng ý hủy</Button></div>
+      </Modal>
+      {toast && <div className="appointment-toast" role="status">{toast}</div>}
     </div>
   );
 }
