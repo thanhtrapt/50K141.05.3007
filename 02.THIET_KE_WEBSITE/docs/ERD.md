@@ -3,7 +3,7 @@
 ## Tài khoản và kiểm soát
 
 - `TaiKhoan (maTK)` cấp tài khoản cho OWNER/STAFF; được tham chiếu bởi `LichSuDangNhap`, `PhieuNhapKho`, `PhieuXuatKho`, `LichHen`, `DonGhiNhanBan`, `NhatKyThaoTac`, `CauHinhHeThong`.
-- `LichSuDangNhap (maLichSu)` lưu lần đăng nhập thành công/thất bại, tên đăng nhập, thời gian, địa chỉ IP và user agent.
+- `LichSuDangNhap (maLichSu)` lưu mỗi lần đăng nhập: thời gian, trạng thái `Thành công`/`Thất bại` và `maTK` (NULL khi thất bại).
 - `NhatKyThaoTac (maNhatKy)` lưu vai trò, hành động, đối tượng cùng JSON trước/sau.
 - `CauHinhHeThong (maCauHinh)` lưu ngưỡng kho/hạn, giờ mở cửa và cấu hình lịch.
 - `NhatKyThongBao (maThongBao)` lưu trạng thái gửi/nhận thông báo tích hợp.

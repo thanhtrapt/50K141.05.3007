@@ -21,14 +21,14 @@ export function createReviewUrl(packageId,customerId) {
 
 export async function enqueueNotification(transaction,{event,recipient,payload,appointmentId=null,sessionId=null,dueAt=new Date()}) {
   const existing=(await requestFor(transaction).input('session',dbTypes.Char(10),sessionId).input('event',dbTypes.NVarChar(100),event)
-    .query(`SELECT TOP(1) maThongBao FROM dbo.NhatKyThongBao WITH (UPDLOCK,HOLDLOCK)
+    .query(`SELECT TOP(1) maThongBao AS "maThongBao" FROM dbo.NhatKyThongBao WITH (UPDLOCK,HOLDLOCK)
       WHERE maCT_DonMua=@session AND suKien=@event`)).recordset[0];
   if(existing)return {id:existing.maThongBao,alreadyQueued:true};
   const result=await requestFor(transaction).input('channel',dbTypes.NVarChar(30),'ZALO').input('event',dbTypes.NVarChar(100),event)
     .input('recipient',dbTypes.NVarChar(100),recipient).input('request',dbTypes.NVarChar(dbTypes.MAX),JSON.stringify(payload))
     .input('appointment',dbTypes.Char(10),appointmentId).input('session',dbTypes.Char(10),sessionId).input('due',dbTypes.DateTime2,dueAt)
     .query(`INSERT INTO dbo.NhatKyThongBao(kenh,suKien,nguoiNhan,yeuCau,phanHoi,trangThai,soLanThu,maLichHen,maCT_DonMua,thoiGianGuiDuKien)
-      VALUES(@channel,@event,@recipient,@request,NULL,'Chờ gửi',0,@appointment,@session,@due) RETURNING maThongBao`);
+      VALUES(@channel,@event,@recipient,@request,NULL,'Chờ gửi',0,@appointment,@session,@due) RETURNING maThongBao AS "maThongBao"`);
   return {id:result.recordset[0].maThongBao,alreadyQueued:false};
 }
 
@@ -38,22 +38,22 @@ export async function logInboundEvent({event,recipient=null,payload,response}) {
       .input('recipient',dbTypes.NVarChar(100),recipient).input('request',dbTypes.NVarChar(dbTypes.MAX),JSON.stringify(payload))
       .input('response',dbTypes.NVarChar(dbTypes.MAX),JSON.stringify(response))
       .query(`INSERT INTO dbo.NhatKyThongBao(kenh,suKien,nguoiNhan,yeuCau,phanHoi,trangThai,soLanThu)
-        VALUES(@channel,@event,@recipient,@request,@response,'Đã nhận',1) RETURNING maThongBao`);
+        VALUES(@channel,@event,@recipient,@request,@response,'Đã nhận',1) RETURNING maThongBao AS "maThongBao"`);
     return result.recordset[0].maThongBao;
   });
 }
 
 async function claimNotification() {
   const result=await getPool().request().query(`WITH candidate AS (
-      SELECT "maThongBao" FROM public."NhatKyThongBao"
-      WHERE "trangThai" IN('Chờ gửi','Đến hạn') AND ("thoiGianGuiDuKien" IS NULL OR "thoiGianGuiDuKien"<=CURRENT_TIMESTAMP)
-        AND "suKien" IN('APPOINTMENT_REMINDER','SESSION_CONFIRM_REQUEST','SUMMARY_AND_REVIEW')
-      ORDER BY COALESCE("thoiGianGuiDuKien","taoLuc"),"maThongBao"
+      SELECT mathongbao FROM public.nhatkythongbao
+      WHERE trangthai IN('Chờ gửi','Đến hạn') AND (thoigianguidukien IS NULL OR thoigianguidukien<=CURRENT_TIMESTAMP)
+        AND sukien IN('APPOINTMENT_REMINDER','SESSION_CONFIRM_REQUEST','SUMMARY_AND_REVIEW')
+      ORDER BY COALESCE(thoigianguidukien,taoluc),mathongbao
       FOR UPDATE SKIP LOCKED LIMIT 1
     )
-    UPDATE public."NhatKyThongBao" AS n SET "trangThai"='Đang gửi',"soLanThu"=n."soLanThu"+1,"capNhatLuc"=CURRENT_TIMESTAMP
-    FROM candidate WHERE n."maThongBao"=candidate."maThongBao"
-    RETURNING n."maThongBao",n."suKien",n."nguoiNhan",n."yeuCau",n."phanHoi",n."soLanThu",n."maLichHen",n."maCT_DonMua"`);
+    UPDATE public.nhatkythongbao AS n SET trangthai='Đang gửi',solanthu=n.solanthu+1,capnhatluc=CURRENT_TIMESTAMP
+    FROM candidate WHERE n.mathongbao=candidate.mathongbao
+    RETURNING n.mathongbao AS "maThongBao",n.sukien AS "suKien",n.nguoinhan AS "nguoiNhan",n.yeucau AS "yeuCau",n.phanhoi AS "phanHoi",n.solanthu AS "soLanThu",n.malichhen AS "maLichHen",n.mact_donmua AS "maCT_DonMua"`);
   return result.recordset[0]||null;
 }
 

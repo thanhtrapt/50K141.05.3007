@@ -46,7 +46,7 @@ export async function generateSummaryPdf({packageId,sessionId,milestone}) {
   const sessions=(await pool.request().input('id',dbTypes.Char(10),packageId).input('current',dbTypes.Char(10),sessionId).query(`SELECT c.maCT_DonMua AS id,
     COALESCE(c.tenBuoiSnapshot,c.tenBuoi,t.tenBuoi) AS name,COALESCE(c.kyThuatSnapshot,t.kyThuat) AS technique,
     COALESCE(c.thoiGianThucHienSnapshot,t.thoiGianThucHien) AS durationMinutes,COALESCE(c.myPhamSDSnapshot,t.myPhamSD) AS cosmeticsUsage,
-    c.ngayThucHien AS performedAt,c.ketQua AS result,c.trangThaiThucHien AS status,c.hinhAnh AS image,a.hoTen AS staffName
+    c.ngayThucHien AS performedAt,c.ketQua AS result,c.trangThaiThucHien AS status,c.hinhAnh AS image,a.tenDangNhap AS staffName
     FROM dbo.CT_DonMua c LEFT JOIN dbo.CT_DichVu t ON t.maCT_DichVu=c.maCT_DichVu LEFT JOIN dbo.TaiKhoan a ON a.maTK=c.maTK
     WHERE c.maDonMua=@id AND c.trangThaiThucHien=N'Đã hoàn thành' ORDER BY c.maCT_DonMua`)).recordset;
   if(!sessions.some(row=>row.id.trim()===sessionId.trim()))throw new Error('Buổi dịch vụ chưa hoàn thành hoặc không thuộc liệu trình.');

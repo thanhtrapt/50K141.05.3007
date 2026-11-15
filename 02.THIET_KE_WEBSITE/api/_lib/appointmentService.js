@@ -255,7 +255,7 @@ export async function listCancellations(customerId,query={}) {
   const request=getPool().request();let where='';
   if(customerId){request.input('customer',dbTypes.Char(10),customerId);where='WHERE x.maKhachHang=@customer';}
   const result=await request.query(`SELECT x.maHuy AS id,x.maLichHen AS appointmentId,x.maKhachHang AS customerId,k.hoTen AS customerName,
-    x.thoiGianHuy AS cancelledAt,x.lyDo AS reason,a.hoTen AS cancelledBy FROM dbo.LichSuHuyLich x JOIN dbo.KhachHang k ON k.maKhachHang=x.maKhachHang
+    x.thoiGianHuy AS cancelledAt,x.lyDo AS reason,a.tenDangNhap AS cancelledBy FROM dbo.LichSuHuyLich x JOIN dbo.KhachHang k ON k.maKhachHang=x.maKhachHang
     JOIN dbo.TaiKhoan a ON a.maTK=x.maTK ${where} ORDER BY x.thoiGianHuy DESC`);
   let rows=result.recordset.map(row=>({...row,appointmentId:row.appointmentId.trim(),customerId:row.customerId.trim()}));
   const keyword=normalizeVietnamese(query.keyword||'');

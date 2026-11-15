@@ -217,7 +217,7 @@ export async function getServicePackage(id) {
   const sessions=(await getPool().request().input('id',dbTypes.Char(10),id).query(`SELECT c.maCT_DonMua AS id,c.maCT_DichVu AS templateId,
     COALESCE(c.tenBuoiSnapshot,c.tenBuoi,t.tenBuoi) AS name,COALESCE(c.kyThuatSnapshot,t.kyThuat) AS technique,
     COALESCE(c.thoiGianThucHienSnapshot,t.thoiGianThucHien) AS durationMinutes,COALESCE(c.myPhamSDSnapshot,t.myPhamSD) AS cosmeticsUsage,
-    c.ngayThucHien AS performedAt,c.ketQua AS result,c.trangThaiThucHien AS status,c.xacNhanKH AS customerConfirmation,c.hinhAnh AS image,c.ghiChu AS note,a.hoTen AS staffName
+    c.ngayThucHien AS performedAt,c.ketQua AS result,c.trangThaiThucHien AS status,c.xacNhanKH AS customerConfirmation,c.hinhAnh AS image,c.ghiChu AS note,a.tenDangNhap AS staffName
     FROM dbo.CT_DonMua c LEFT JOIN dbo.CT_DichVu t ON t.maCT_DichVu=c.maCT_DichVu LEFT JOIN dbo.TaiKhoan a ON a.maTK=c.maTK
     WHERE c.maDonMua=@id ORDER BY c.maCT_DonMua`)).recordset;
   const summaryFiles=(await getPool().request().input('id',dbTypes.Char(10),id).query(`SELECT maTaiLieu AS id,maCT_DonMua AS sessionId,loaiTaiLieu AS milestone,
@@ -402,9 +402,9 @@ export async function listReviews(query={}) {
 export async function getReview(id) {
   const row=(await getPool().request().input('id',dbTypes.Char(10),id).query(`SELECT r.maDanhGia AS id,r.noiDung AS content,r.mucDanhGia AS rating,r.hinhAnh AS image,
     r.thoiGianDanhGia AS reviewedAt,k.maKhachHang AS customerId,k.hoTen AS customerName,k.soDienThoai AS customerPhone,
-    s.tenDV AS serviceName,performer.hoTen AS staffName,d.maDonMua AS servicePackageId FROM dbo.DanhGia r
+    s.tenDV AS serviceName,performer.tenDangNhap AS staffName,d.maDonMua AS servicePackageId FROM dbo.DanhGia r
     JOIN dbo.KhachHang k ON k.maKhachHang=r.maKhachHang LEFT JOIN dbo.DonMuaDV d ON d.maDonMua=r.maDonMua
-    LEFT JOIN dbo.DichVu s ON s.maDichVu=d.maDichVu LEFT JOIN LATERAL (SELECT a.hoTen FROM dbo.CT_DonMua c
+    LEFT JOIN dbo.DichVu s ON s.maDichVu=d.maDichVu LEFT JOIN LATERAL (SELECT a.tenDangNhap FROM dbo.CT_DonMua c
       JOIN dbo.TaiKhoan a ON a.maTK=c.maTK WHERE c.maDonMua=d.maDonMua ORDER BY c.maCT_DonMua LIMIT 1) performer ON TRUE WHERE r.maDanhGia=@id`)).recordset[0];
   if(!row)throw notFound('Không tìm thấy đánh giá phù hợp!');
   return {...row,id:row.id.trim(),customerId:row.customerId.trim(),servicePackageId:row.servicePackageId?.trim()||null,rating:Number(row.rating)};

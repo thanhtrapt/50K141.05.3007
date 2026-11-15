@@ -436,6 +436,9 @@ dist/
 .env
 .env.*
 !.env.example
+# Tệp cấu hình cục bộ chứa DATABASE_URL/JWT_SECRET (không commit).
+env
+*/env
 public/uploads/
 *.log
 Thumbs.db

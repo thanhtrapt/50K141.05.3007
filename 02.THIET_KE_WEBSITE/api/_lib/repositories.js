@@ -43,8 +43,10 @@ export async function nextCode(prefix, transaction) {
   const suffixWidth=10-prefix.length;
   if(suffixWidth<1)throw new Error('Tiền tố mã định danh vượt quá độ dài cột.');
   const r=requestFor(transaction);
+  // Tên bảng/cột để nguyên dạng viết hoa trong cấu hình; lớp PostgreSQL sẽ
+  // chuyển thành identifier không quote (lowercase) đúng như schema Supabase.
   const result=await r.query(`SELECT COALESCE(MAX(NULLIF(regexp_replace(RIGHT(RTRIM(${config.column}),${suffixWidth}), '[^0-9]', '', 'g'), '')::integer),0)+1 AS "nextValue"
-    FROM public."${config.table}"`);
+    FROM public.${config.table}`);
   return formatEntityCode(prefix,result.recordset[0].nextValue);
 }
 
@@ -59,7 +61,7 @@ export async function nextLotCode(receiptDate, transaction) {
   const day=receiptDate.slice(8,10)+receiptDate.slice(5,7)+receiptDate.slice(2,4);
   const r=requestFor(transaction);
   const result=await r.input('prefix',dbTypes.VarChar(7),`${day}-`).query(`SELECT COALESCE(MAX(NULLIF(regexp_replace(RIGHT(RTRIM(maLo),3), '[^0-9]', '', 'g'), '')::integer),0)+1 AS "nextValue"
-    FROM public."LoHang" WHERE maLo LIKE @prefix || '%'`);
+    FROM public.LoHang WHERE maLo LIKE @prefix || '%'`);
   return formatLotCode(receiptDate,result.recordset[0].nextValue);
 }
 
