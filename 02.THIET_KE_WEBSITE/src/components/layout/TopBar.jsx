@@ -29,6 +29,10 @@ function getPageTitle(pathname) {
   const section = segments[0];
   const action = segments.at(-1);
 
+  if ((section === 'ho-so-khach-hang' || section === 'khach-hang') && action === 'ghi-nhan-mua-them') {
+    return 'Ghi nhận sản phẩm mua thêm';
+  }
+
   if ((section === 'ho-so-khach-hang' || section === 'khach-hang') && segments[2] === 'dich-vu-dang-su-dung') {
     return 'Dịch vụ đang sử dụng';
   }
@@ -64,8 +68,22 @@ function getPageTitle(pathname) {
 function getBreadcrumbItems(pathname, pageTitle) {
   const segments = pathname.split('/').filter(Boolean);
   const section = segments[0];
+  const isRetailSale = (section === 'khach-hang' || section === 'ho-so-khach-hang')
+    && segments.at(-1) === 'ghi-nhan-mua-them';
   const isCustomerService = (section === 'khach-hang' || section === 'ho-so-khach-hang')
     && segments[2] === 'dich-vu-dang-su-dung';
+
+  if (isRetailSale) {
+    const basePath = section === 'ho-so-khach-hang' ? '/ho-so-khach-hang' : '/khach-hang';
+    const isDraft = segments[1] === 'tao-moi';
+    const customerPath = isDraft ? `${basePath}/tao-moi` : `${basePath}/${segments[1]}`;
+    return [
+      { label: 'Quản lý Spa', to: '/trang-chu' },
+      { label: 'Hồ sơ khách hàng', to: basePath },
+      { label: isDraft ? 'Tạo hồ sơ khách hàng' : 'Chi tiết hồ sơ khách hàng', to: customerPath },
+      { label: 'Ghi nhận sản phẩm mua thêm' },
+    ];
+  }
 
   if (!isCustomerService) return [{ label: 'Quản lý Spa', to: '/trang-chu' }, { label: pageTitle }];
 

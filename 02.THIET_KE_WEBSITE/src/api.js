@@ -5,13 +5,14 @@
  */
 const NETWORK_ERROR_MESSAGE = 'Có lỗi xảy ra. Vui lòng thử lại.';
 
-export async function apiRequest(path, { method = 'GET', body, auth = true } = {}) {
+export async function apiRequest(path, { method = 'GET', body, auth = true, detailedServerErrors = false } = {}) {
   const token = window.localStorage.getItem('huong-spa-access-token');
 
   let response;
   try {
     response = await fetch(path, {
       method,
+      cache: 'no-store',
       headers: {
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         ...(auth && token ? { Authorization: `Bearer ${token}` } : {}),
@@ -48,7 +49,7 @@ export async function apiRequest(path, { method = 'GET', body, auth = true } = {
       ? 'Có lỗi xảy ra. Vui lòng thử lại.'
       : `Yêu cầu không thành công (${response.status}).`;
 
-    const error = new Error(isServerFailure ? fallbackMessage : serverMessage || fallbackMessage);
+    const error = new Error(isServerFailure && !detailedServerErrors ? fallbackMessage : serverMessage || fallbackMessage);
     error.status = response.status;
     error.isServerError = isServerFailure;
     error.code = isJson ? payload.code : 'HTTP_ERROR';
@@ -58,7 +59,7 @@ export async function apiRequest(path, { method = 'GET', body, auth = true } = {
       serverMessage || fallbackMessage,
       payload,
     );
-    if (isServerFailure) {
+    if (isServerFailure && !detailedServerErrors) {
       window.dispatchEvent(new CustomEvent('huong-spa:toast', { detail: { message: 'Có lỗi xảy ra. Vui lòng thử lại.' } }));
     }
     throw error;

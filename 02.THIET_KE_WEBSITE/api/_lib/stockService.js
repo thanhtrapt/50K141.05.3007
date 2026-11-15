@@ -174,14 +174,12 @@ export async function createReceipt(body,user) {
     prepared.push({item,price,quantity,lot});
   }
   fieldValidation(errors,'Chưa hoàn tất thông tin, yêu cầu nhập lại');
-  const total=prepared.reduce((sum,line)=>sum+line.price*line.quantity,0);
   return inTransaction(async(transaction)=>{
     const receiptId=await nextCode('PN',transaction);
     const r=requestFor(transaction).input('id',dbTypes.Char(10),receiptId).input('creatorId',dbTypes.Char(10),user.id)
       .input('creator',dbTypes.NVarChar(50),user.full_name||user.name||user.id||'Hệ thống').input('date',dbTypes.Date,date)
-      .input('payment',dbTypes.NVarChar(20),paymentStatus).input('total',dbTypes.Money,total);
+      .input('payment',dbTypes.NVarChar(20),paymentStatus).input('total',dbTypes.Money,0);
     await r.query('INSERT INTO dbo.PhieuNhapKho(maPhieuNhap,ngayNhap,nguoiTao,trangThaiThanhToan,tongTien,maTK) VALUES(@id,@date,@creator,@payment,@total,@creatorId)');
-    const affected=[];
     for(const {item,price,quantity,lot} of prepared) {
       let productId=item.cosmeticId||item.maMyPham;
       if(item.newProduct) {
@@ -201,29 +199,22 @@ export async function createReceipt(body,user) {
       const product=(await requestFor(transaction).input('id',dbTypes.Char(10),productId).query('SELECT TOP(1) * FROM dbo.MyPham WITH (UPDLOCK,HOLDLOCK) WHERE maMyPham=@id')).recordset[0];
       if(!product) throw notFound('Không tìm thấy mỹ phẩm phù hợp!');
       let lotId=item.batchId||item.maLo;
-      let expiryForAlert=lot.expiryDate||lot.hanSuDung||null;
       if(lotId) {
         const lotRow=(await requestFor(transaction).input('lot',dbTypes.Char(10),lotId).input('product',dbTypes.Char(10),productId)
           .query('SELECT hanSuDung AS "hanSuDung" FROM dbo.LoHang WITH (UPDLOCK,HOLDLOCK) WHERE maLo=@lot AND maMyPham=@product')).recordset[0];
         if(!lotRow) throw notFound('Không tìm thấy lô hàng phù hợp.');
-        expiryForAlert=lotRow.hanSuDung;
       } else {
-        const code=await nextLotCode(date,transaction);lotId=code;
+        lotId=await nextLotCode(date,transaction);
         await requestFor(transaction).input('lot',dbTypes.Char(10),lotId).input('product',dbTypes.Char(10),productId)
           .input('production',dbTypes.Date,lot.productionDate||lot.ngaySanXuat).input('expiry',dbTypes.Date,lot.expiryDate||lot.hanSuDung)
           .query('INSERT INTO dbo.LoHang(maLo,soLuongTonLo,ngaySanXuat,hanSuDung,maMyPham) VALUES(@lot,0,@production,@expiry,@product)');
       }
-      const amount=price*quantity;
       await requestFor(transaction).input('line',dbTypes.Char(10),await nextCode('CI',transaction)).input('receipt',dbTypes.Char(10),receiptId)
-        .input('lot',dbTypes.Char(10),lotId).input('quantity',dbTypes.Int,quantity).input('price',dbTypes.Money,price).input('amount',dbTypes.Money,amount)
+        .input('lot',dbTypes.Char(10),lotId).input('quantity',dbTypes.Int,quantity).input('price',dbTypes.Money,price).input('amount',dbTypes.Money,0)
         .query('INSERT INTO dbo.CT_PhieuNhapKho(maCT_PhieuNhap,soLuong,giaNhap,thanhTien,maPhieuNhap,maLo) VALUES(@line,@quantity,@price,@amount,@receipt,@lot)');
-      await requestFor(transaction).input('lot',dbTypes.Char(10),lotId).input('quantity',dbTypes.Int,quantity).query('UPDATE dbo.LoHang SET soLuongTonLo=soLuongTonLo+@quantity WHERE maLo=@lot');
-      await requestFor(transaction).input('product',dbTypes.Char(10),productId).input('quantity',dbTypes.Int,quantity).query('UPDATE dbo.MyPham SET soLuongTonKho=soLuongTonKho+@quantity WHERE maMyPham=@product');
-      const updated=(await requestFor(transaction).input('product',dbTypes.Char(10),productId).query('SELECT soLuongTonKho AS "soLuongTonKho" FROM dbo.MyPham WHERE maMyPham=@product')).recordset[0];
-      await updateStockAlerts(transaction,user,productId,Number(updated.soLuongTonKho));
-      await updateExpiryAlert(transaction,user,lotId,productId,expiryForAlert||date);
-      affected.push(productId);
     }
+    const total=Number((await requestFor(transaction).input('id',dbTypes.Char(10),receiptId)
+      .query('SELECT tongTien AS total FROM dbo.PhieuNhapKho WHERE maPhieuNhap=@id')).recordset[0]?.total)||0;
     await audit(transaction,user,'Tạo phiếu nhập kho','PhieuNhapKho',receiptId,null,{maPhieuNhap:receiptId,ngayNhap:date,trangThaiThanhToan:paymentStatus,tongTien:total,maTK:user.id,items:prepared});
     return {id:receiptId.trim(),receiptDate:date,total,message:'Tạo phiếu nhập thành công'};
   });
@@ -285,12 +276,6 @@ export async function createIssue(body,user) {
       await requestFor(transaction).input('line',dbTypes.Char(10),await nextCode('CX',transaction)).input('issue',dbTypes.Char(10),issueId)
         .input('lot',dbTypes.Char(10),batchId).input('quantity',dbTypes.Int,quantity)
         .query('INSERT INTO dbo.CT_PhieuXuatKho(maCT_PhieuXuat,soLuong,maPhieuXuat,maLo) VALUES(@line,@quantity,@issue,@lot)');
-      await requestFor(transaction).input('lot',dbTypes.Char(10),batchId).input('quantity',dbTypes.Int,quantity)
-        .query('UPDATE dbo.LoHang SET soLuongTonLo=soLuongTonLo-@quantity WHERE maLo=@lot');
-      await requestFor(transaction).input('product',dbTypes.Char(10),productId).input('quantity',dbTypes.Int,quantity)
-        .query('UPDATE dbo.MyPham SET soLuongTonKho=soLuongTonKho-@quantity WHERE maMyPham=@product');
-      const stock=(await requestFor(transaction).input('product',dbTypes.Char(10),productId).query('SELECT soLuongTonKho AS "soLuongTonKho" FROM dbo.MyPham WHERE maMyPham=@product')).recordset[0].soLuongTonKho;
-      await updateStockAlerts(transaction,user,productId,Number(stock));
     }
     await audit(transaction,user,'Tạo phiếu xuất kho','PhieuXuatKho',issueId,null,{maPhieuXuat:issueId,ngayXuat:date,ghiChu:body.reason||body.ghiChu||'',items});
     return {id:issueId.trim(),issueDate:date,message:'Tạo phiếu xuất thành công'};

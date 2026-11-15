@@ -93,7 +93,7 @@ async function cancelReminder() {
 
 function display(row) {
   return {...row,id:row.id.trim(),customerId:row.customerId?.trim()||null,sessionId:row.sessionId?.trim()||null,packageId:row.packageId?.trim()||null,
-    date:dayText(row.date),startTime:clockText(row.startTime),endTime:clockText(row.endTime)};
+    date:dayText(row.date),startTime:clockText(row.startTime),endTime:row.endTime==null?'':clockText(row.endTime)};
 }
 
 export async function listAppointments(query={}) {
@@ -154,46 +154,76 @@ export async function createAppointment(body,user) {
   body=body&&typeof body==='object'&&!Array.isArray(body)?body:{};
   const {date,startTime}=validateDateAndTime(body);let customerId=String(body.customerId??body.maKhachHang??'').trim();
   let sessionId=String(body.sessionId??body.maCT_DonMua??'').trim();const customerPhone=String(body.customerPhone??body.soDienThoai??'').trim();
+  const customerName=String(body.customerName??body.hoTen??'').trim();
+  const customerBirthday=String(body.customerBirthday??body.ngaySinh??'').trim();
   const serviceName=String(body.serviceName??body.tenDV??'').trim();const note=body.note??body.ghiChu??null;
+  const requestedEndTime=String(body.endTime??body.gioKetThuc??'').trim();
   const errors=[];
-  if(!customerId&&!customerPhone)errors.push({field:'customerId',message:'Khách hàng không được bỏ trống'});
-  if(!sessionId&&(!customerPhone||!serviceName))errors.push({field:'sessionId',message:'Buổi dịch vụ không được bỏ trống'});
+  if(!customerPhone||!/^\d{10}$/.test(customerPhone))errors.push({field:'customerPhone',message:'Số điện thoại phải gồm đúng 10 chữ số'});
+  if(!customerName)errors.push({field:'customerName',message:'Họ tên khách hàng không được để trống'});
+  if(!isDate(customerBirthday)||customerBirthday>=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'}).format(new Date()))errors.push({field:'customerBirthday',message:'Ngày sinh phải nhỏ hơn hôm nay'});
+  if(customerName.length>50)errors.push({field:'customerName',message:'Họ tên không được vượt quá 50 ký tự'});
+  if(!sessionId&&serviceName&&!requestedEndTime)errors.push({field:'endTime',message:'Giờ kết thúc không được để trống'});
+  if(!sessionId&&!serviceName&&!requestedEndTime)errors.push({field:'endTime',message:'Vui lòng chọn buổi liệu trình hoặc nhập giờ kết thúc'});
+  if(requestedEndTime&&!timePattern.test(requestedEndTime))errors.push({field:'endTime',message:'Giờ kết thúc phải có định dạng HH:mm'});
+  if(requestedEndTime&&timePattern.test(requestedEndTime)&&mins(requestedEndTime)<=mins(startTime))errors.push({field:'endTime',message:'Giờ kết thúc phải lớn hơn giờ bắt đầu'});
   if(note!=null&&(typeof note!=='string'||note.length>200))errors.push({field:'note',message:'Ghi chú tối đa 200 ký tự'});
   if(errors.length)throw badRequest('Thông tin lịch hẹn chưa hoàn tất, yêu cầu nhập lại',errors);
   return inTransaction(async transaction=>{
     const config=await settings(transaction);const threshold=Number(config.BLACKLIST_CANCEL_LIMIT||3);
-    if(!customerId) {
-      const match=(await requestFor(transaction).input('phone',dbTypes.VarChar(10),customerPhone).query('SELECT TOP(1) maKhachHang AS "maKhachHang" FROM dbo.KhachHang WITH (UPDLOCK,HOLDLOCK) WHERE soDienThoai=@phone')).recordset[0];
-      if(!match)throw notFound('Không tìm thấy khách hàng phù hợp!');
-      customerId=match.maKhachHang.trim();
+    let knownCustomer=(await requestFor(transaction).input('phone',dbTypes.VarChar(10),customerPhone)
+      .query('SELECT maKhachHang AS "maKhachHang",hoTen AS "hoTen",ngaySinh AS "ngaySinh" FROM dbo.KhachHang WITH (UPDLOCK,HOLDLOCK) WHERE soDienThoai=@phone LIMIT 1')).recordset[0];
+    const rpcName=knownCustomer?.hoTen??customerName;
+    const rpcBirthday=knownCustomer?.ngaySinh??customerBirthday;
+    try {
+      const identity=(await requestFor(transaction).input('accountId',dbTypes.Char(10),user.id)
+        .query('SELECT auth_user_id AS authUserId FROM public.taikhoan WHERE matk=@accountId LIMIT 1')).recordset[0];
+      const authUserId=String(identity?.authUserId??'').trim();
+      if(!authUserId)throw err(403,'SUPABASE_IDENTITY_MISSING','Tài khoản chưa được liên kết với người dùng Supabase Auth.');
+      const claims=JSON.stringify({sub:authUserId,role:'authenticated'});
+      await requestFor(transaction).input('authUserId',dbTypes.VarChar(64),authUserId).input('claims',dbTypes.VarChar(2000),claims)
+        .query("SELECT set_config('request.jwt.claim.sub',@authUserId,true),set_config('request.jwt.claims',@claims,true)");
+      const rpcResult=(await requestFor(transaction).input('name',dbTypes.NVarChar(50),rpcName).input('phone',dbTypes.VarChar(10),customerPhone)
+        .input('birthday',dbTypes.Date,rpcBirthday).query('SELECT public.fn_tao_hoac_lay_khach(@name,@phone,@birthday) AS customerId')).recordset[0];
+      customerId=String(rpcResult?.customerId??'').trim();
+    } catch (rpcError) {
+      if(rpcError instanceof AppError)throw rpcError;
+      console.error('Lỗi fn_tao_hoac_lay_khach:', rpcError);
+      throw err(422,'CUSTOMER_RPC_FAILED',`Không thể tạo hoặc lấy hồ sơ khách hàng: ${rpcError.message}`);
     }
-    if(!sessionId) {
+    if(!customerId)throw err(500,'CUSTOMER_RPC_EMPTY','Hàm tạo hoặc lấy khách hàng không trả về mã khách hàng.');
+    if(!sessionId&&serviceName) {
       const match=(await requestFor(transaction).input('customer',dbTypes.Char(10),customerId).input('serviceName',dbTypes.NVarChar(100),serviceName).query(`SELECT TOP(1) c.maCT_DonMua AS "maCT_DonMua"
         FROM dbo.CT_DonMua c WITH (UPDLOCK,HOLDLOCK) JOIN dbo.DonMuaDV d ON d.maDonMua=c.maDonMua
         JOIN dbo.DichVu v ON v.maDichVu=d.maDichVu
         WHERE d.maKhachHang=@customer AND v.tenDV=@serviceName AND c.trangThaiThucHien=N'Chưa thực hiện'
         ORDER BY d.ngayMua,c.maCT_DonMua`)).recordset[0];
-      if(!match)throw notFound('Không tìm thấy buổi dịch vụ phù hợp!');
-      sessionId=match.maCT_DonMua.trim();
+      if(match)sessionId=match.maCT_DonMua.trim();
     }
     const customer=(await requestFor(transaction).input('id',dbTypes.Char(10),customerId).query('SELECT maKhachHang AS "maKhachHang",hoTen AS "hoTen",soDienThoai AS "soDienThoai",soLanHuyLich AS "soLanHuyLich" FROM dbo.KhachHang WITH (UPDLOCK,HOLDLOCK) WHERE maKhachHang=@id')).recordset[0];
     if(!customer)throw notFound('Không tìm thấy khách hàng phù hợp!');
     if(Number(customer.soLanHuyLich)>=threshold)throw err(409,'CUSTOMER_BLACKLISTED','Khách hàng thuộc danh sách đen!',[{field:'customerPhone',message:`${customer.hoTen} đã hủy lịch ${customer.soLanHuyLich} lần. Vui lòng cân nhắc trước khi lưu; bạn vẫn có thể tạo lịch hẹn.`}]);
-    const session=await appointmentSession(customerId,sessionId,transaction);
-    const slot=await checkSlot({date,startTime,duration:session.durationMinutes,transaction});
-    const duplicate=(await requestFor(transaction).input('session',dbTypes.Char(10),sessionId).query(`SELECT TOP(1) maLichHen FROM dbo.LichHen WITH (UPDLOCK,HOLDLOCK)
-      WHERE maCT_DonMua=@session AND trangThai NOT IN(N'Đã hủy',N'Hoàn thành')`)).recordset[0];
-    if(duplicate)throw err(409,'SESSION_ALREADY_SCHEDULED','Buổi dịch vụ đã có lịch hẹn.');
+    let session=null;let slot;
+    if(sessionId) {
+      session=await appointmentSession(customerId,sessionId,transaction);
+      slot=await checkSlot({date,startTime,duration:session.durationMinutes,transaction});
+      const duplicate=(await requestFor(transaction).input('session',dbTypes.Char(10),sessionId).query(`SELECT TOP(1) maLichHen FROM dbo.LichHen WITH (UPDLOCK,HOLDLOCK)
+        WHERE maCT_DonMua=@session AND trangThai NOT IN(N'Đã hủy',N'Hoàn thành')`)).recordset[0];
+      if(duplicate)throw err(409,'SESSION_ALREADY_SCHEDULED','Buổi dịch vụ đã có lịch hẹn.');
+    } else {
+      const start=mins(startTime),end=mins(requestedEndTime);
+      slot=await checkSlot({date,startTime,duration:end-start,transaction});
+    }
     const id=await nextCode('LH',transaction);
     await requestFor(transaction).input('id',dbTypes.Char(10),id).input('date',dbTypes.Date,date).input('start',dbTypes.VarChar(8),`${startTime}:00`)
-      .input('end',dbTypes.VarChar(8),`${slot.endTime}:00`).input('status',dbTypes.NVarChar(50),'Chờ xác nhận')
-      .input('note',dbTypes.NVarChar(200),note).input('session',dbTypes.Char(10),sessionId).input('user',dbTypes.Char(10),user.id).input('customer',dbTypes.Char(10),customerId)
+      .input('end',dbTypes.VarChar(8),sessionId?null:`${slot.endTime}:00`).input('status',dbTypes.NVarChar(50),'Chờ xác nhận')
+      .input('note',dbTypes.NVarChar(200),note).input('session',dbTypes.Char(10),sessionId||null).input('user',dbTypes.Char(10),user.id).input('customer',dbTypes.Char(10),customerId)
       .query(`INSERT INTO dbo.LichHen(maLichHen,ngayHen,gioBatDau,gioKetThuc,trangThai,ghiChu,maCT_DonMua,maTK,maKhachHang)
-        VALUES(@id,@date,CONVERT(time(0),@start),CONVERT(time(0),@end),@status,@note,@session,@user,@customer)`);
+        VALUES(@id,@date,CONVERT(time(0),@start),CASE WHEN @end IS NULL THEN NULL ELSE CONVERT(time(0),@end) END,@status,@note,@session,@user,@customer)`);
     const appointment={id,date,startTime,endTime:slot.endTime,status:'Chờ xác nhận',note,customerId,sessionId};
     await queueReminder({...appointment,config},session,transaction);
     await insertAudit({transaction,user,action:'Tạo lịch hẹn',entity:'LichHen',entityId:id,before:null,after:appointment});
-    return {...appointment,id:id.trim(),customerName:session.customerName,customerPhone:session.customerPhone,
+    return {...appointment,id:id.trim(),customerName:customer.hoTen,customerPhone:customer.soDienThoai,
       message:'Tạo lịch hẹn thành công'};
   });
 }

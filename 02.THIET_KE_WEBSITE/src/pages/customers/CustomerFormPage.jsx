@@ -3,12 +3,9 @@ import Button from '../../components/ui/Button.jsx';
 import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
 import { useFeedback } from '../../components/ui/FeedbackContext.jsx';
 import DataTable from '../../components/ui/DataTable.jsx';
-import Modal from '../../components/ui/Modal.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
-import SelectField from '../../components/ui/SelectField.jsx';
 import TextField from '../../components/ui/TextField.jsx';
 import { formatCurrency } from '../../data/mockData.js';
-import { apiList } from '../../api.js';
 
 const emptyCustomer = { name: '', birthday: '', phone: '' };
 
@@ -22,30 +19,19 @@ function toDisplayDate(value = '') {
   return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : value;
 }
 
-export default function CustomerFormPage({ record, nextId, onCancel, onSave }) {
+export default function CustomerFormPage({ record, nextId, onCancel, onSave, onAddPurchases, draft, draftPurchases }) {
   const [form, setForm] = useState(emptyCustomer);
   const [purchases, setPurchases] = useState([]);
-  const [purchaseModalOpen, setPurchaseModalOpen] = useState(false);
-  const [purchaseForm, setPurchaseForm] = useState({ product: '', quantity: '', date: '' });
   const [cancelOpen, setCancelOpen] = useState(false);
   const [formError, setFormError] = useState('');
-  const [purchaseError, setPurchaseError] = useState('');
-  const [purchaseQuantityError, setPurchaseQuantityError] = useState('');
-  const [products, setProducts] = useState([]);
-  const { showDialog, notify } = useFeedback();
-
-  useEffect(() => {
-    let active = true;
-    apiList('/api/retail-products').then((rows) => { if (active) setProducts(rows); }).catch(() => {});
-    return () => { active = false; };
-  }, []);
+  const { showDialog } = useFeedback();
 
   useEffect(() => {
     setForm(record
       ? { name: record.name, birthday: toInputDate(record.birthday), phone: record.phone }
-      : emptyCustomer);
-    setPurchases(record?.purchases ?? []);
-  }, [record?.id]);
+      : { ...emptyCustomer, ...(draft ?? {}) });
+    setPurchases(draftPurchases ?? record?.purchases ?? []);
+  }, [record?.id, draft?.name, draft?.birthday, draft?.phone, draftPurchases]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -58,35 +44,6 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave }) {
       console.error('[customers] Không thể lưu hồ sơ khách hàng:', error);
       showDialog({ message: record ? 'Không thể cập nhật hồ sơ khách hàng. Vui lòng thử lại sau!' : 'Không thể tạo hồ sơ khách hàng. Vui lòng thử lại sau!' });
     }
-  };
-
-  const addPurchase = (event) => {
-    event.preventDefault();
-    const product = products.find((item) => item.id === purchaseForm.product);
-    if (!product || !purchaseForm.date || !purchaseForm.quantity) { setPurchaseError('Vui lòng nhập đầy đủ thông tin.'); return; }
-    const quantity = Number(purchaseForm.quantity);
-    if (quantity < 1) { setPurchaseQuantityError('Giá trị nhập không hợp lệ.'); return; }
-    if (purchases.some((item) => item.product === product.name && item.date === toDisplayDate(purchaseForm.date))) {
-      notify('Sản phẩm đã được chọn!', 'error');
-      return;
-    }
-    const date = toDisplayDate(purchaseForm.date);
-    setPurchases((current) => [...current, {
-      id: `${product.id}-${Date.now()}`,
-      productId: product.id,
-      quantityValue: quantity,
-      saleDate: purchaseForm.date,
-      date,
-      product: product.name,
-      quantity: `${quantity} ${product.unit ?? 'chai'}`,
-      price: formatCurrency(product.price),
-      total: formatCurrency(product.price * quantity),
-    }]);
-    setPurchaseModalOpen(false);
-    setPurchaseError('');
-    setPurchaseQuantityError('');
-    showDialog({ tone: 'success', title: 'Ghi nhận thành công', message: '.' });
-    setPurchaseForm({ product: '', quantity: '', date: '' });
   };
 
   return (
@@ -124,7 +81,7 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave }) {
         <section className="panel customer-form__section customer-form__purchases">
           <div className="customer-form__section-heading">
             <h2>Sản phẩm mua thêm</h2>
-            <Button type="button" variant="secondary" onClick={() => { setPurchaseForm({ product: '', quantity: '', date: '' }); setPurchaseModalOpen(true); }}>+ Ghi nhận sản phẩm bán lẻ</Button>
+            {onAddPurchases && <Button type="button" variant="secondary" onClick={() => onAddPurchases(form, purchases)}>+ Ghi nhận mua thêm</Button>}
           </div>
           <DataTable
             columns={[
@@ -153,20 +110,6 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave }) {
         </div>
       </form>
 
-      <Modal open={purchaseModalOpen} title="GHI NHẬN SẢN PHẨM BÁN LẺ" onClose={() => setPurchaseModalOpen(false)} size="medium">
-        <form className="form-grid" onSubmit={addPurchase} noValidate>
-          {purchaseError && <p className="field__error form-grid__wide" role="alert">{purchaseError}</p>}
-          <TextField label="Ngày mua *" type="date" value={purchaseForm.date} onChange={(event) => setPurchaseForm({ ...purchaseForm, date: event.target.value })} required />
-          <SelectField label="Tên sản phẩm *" value={purchaseForm.product} onChange={(event) => setPurchaseForm({ ...purchaseForm, product: event.target.value })} options={[{ value: '', label: 'Chọn sản phẩm' }, ...products.map((product) => ({ value: product.id, label: product.name }))]} required />
-          <TextField label="Số lượng *" type="number" min="1" value={purchaseForm.quantity} onChange={(event) => { setPurchaseForm({ ...purchaseForm, quantity: event.target.value }); setPurchaseQuantityError(''); }} error={purchaseQuantityError} required />
-          {purchaseForm.product && <TextField label="Giá bán" value={formatCurrency(products.find((product) => product.id === purchaseForm.product)?.price ?? 0)} readOnly />}
-          {purchaseForm.product && purchaseForm.quantity !== '' && <TextField label="Thành tiền" value={formatCurrency((products.find((product) => product.id === purchaseForm.product)?.price ?? 0) * Number(purchaseForm.quantity))} readOnly />}
-          <div className="modal-form-actions form-grid__wide">
-            <Button variant="secondary" onClick={() => setPurchaseModalOpen(false)}>Hủy</Button>
-            <Button type="submit">Thêm sản phẩm</Button>
-          </div>
-        </form>
-      </Modal>
       <ConfirmDialog open={cancelOpen} title="Xác nhận hủy" message="Các thay đổi sẽ không được lưu. Bạn có chắc chắn muốn hủy?" onCancel={() => setCancelOpen(false)} onConfirm={onCancel} />
     </div>
   );

@@ -62,16 +62,14 @@ function dateLabel(value) {
 
 function validatePackageEdit(values) {
   const errors = {};
-  for (const field of ['purchaseDate', 'startDate']) {
-    if (!String(values[field] || '').trim()) errors[field] = 'Trường này không được để trống.';
-    else if (!parseDateInput(values[field])) errors[field] = 'Nhập ngày theo định dạng dd/MM/yy.';
-  }
-  if (values.expectedEndDate && !parseDateInput(values.expectedEndDate)) errors.expectedEndDate = 'Nhập ngày theo định dạng dd/MM/yy.';
-  const start = parseDateInput(values.startDate);
-  const end = parseDateInput(values.expectedEndDate);
-  if (start && end && end < start) errors.expectedEndDate = 'Ngày kết thúc dự kiến không được trước ngày bắt đầu.';
   if (!['Chưa thanh toán', 'Đã thanh toán'].includes(values.paymentStatus)) errors.paymentStatus = 'Chọn trạng thái thanh toán hợp lệ.';
+  if (String(values.note ?? '').length > 255) errors.note = 'Ghi chú tối đa 255 ký tự.';
+  if (String(values.summaryFile ?? '').length > 255) errors.summaryFile = 'Đường dẫn tệp tối đa 255 ký tự.';
   return errors;
+}
+
+function toDateTimeLocal(value) {
+  return value ? String(value).replace(' ', 'T').slice(0, 16) : '';
 }
 
 function showApiError(notify, error, fallback) {
@@ -100,6 +98,7 @@ function normalizePackage(record, customer) {
     status: session.status || 'Chưa thực hiện',
     customerConfirmation: session.customerConfirmation || 'Chưa xác nhận',
     date: dateLabel(session.performedAt),
+    performedAtValue: toDateTimeLocal(session.performedAt),
     duration: Number(session.durationMinutes) || 0,
     employee: session.staffName || '',
     result: session.result || '',
@@ -117,13 +116,11 @@ function normalizePackage(record, customer) {
     name: record.serviceName || 'Dịch vụ',
     purchaseOrder: record.id,
     price: Number(record.purchasePrice) || 0,
-    startDate: dateLabel(record.startDate || record.purchaseDate),
-    startDateValue: toISODate(record.startDate || record.purchaseDate),
-    expectedEndDate: dateLabel(record.expectedEndDate),
-    expectedEndDateValue: toISODate(record.expectedEndDate),
     purchaseDate: dateLabel(record.purchaseDate),
     purchaseDateValue: toISODate(record.purchaseDate),
     paymentStatus: record.paymentStatus || '—',
+    note: record.note || '',
+    summaryFile: record.summaryFile || '',
     status: record.completionStatus || 'Chưa thực hiện',
     totalSessions: Number(record.totalSessions) || sessions.length,
     sessions,
@@ -184,6 +181,9 @@ export default function CustomerActiveServicePage({ customer, packageId: request
   const [editValues, setEditValues] = useState(null);
   const [editErrors, setEditErrors] = useState({});
   const [editingDetails, setEditingDetails] = useState(false);
+  const [editingSession, setEditingSession] = useState(false);
+  const [sessionEditDraft, setSessionEditDraft] = useState(null);
+  const [sessionEditErrors, setSessionEditErrors] = useState({});
   const [savingDetails, setSavingDetails] = useState(false);
   const [simulatingConfirmation, setSimulatingConfirmation] = useState(false);
   const { notify, showDialog } = useFeedback();
@@ -207,6 +207,8 @@ export default function CustomerActiveServicePage({ customer, packageId: request
     setLoadError('');
     setUsage(null);
     setEditingDetails(false);
+    setEditingSession(false);
+    setSessionEditDraft(null);
     setEditValues(null);
     setEditErrors({});
     setSelectedSessionNumber(null);
@@ -231,10 +233,9 @@ export default function CustomerActiveServicePage({ customer, packageId: request
   };
 
   const initialEditValues = () => ({
-    purchaseDate: formatDateInput(usage?.purchaseDateValue),
-    startDate: formatDateInput(usage?.startDateValue),
-    expectedEndDate: formatDateInput(usage?.expectedEndDateValue),
     paymentStatus: usage?.paymentStatus || '',
+    note: usage?.note || '',
+    summaryFile: usage?.summaryFile || '',
   });
 
   const beginEditing = () => {
@@ -276,17 +277,16 @@ export default function CustomerActiveServicePage({ customer, packageId: request
       await apiRequest('/api/service-packages/' + encodeURIComponent(packageId), {
         method: 'PUT',
         body: {
-          purchaseDate: parseDateInput(editValues.purchaseDate),
-          startDate: parseDateInput(editValues.startDate),
-          expectedEndDate: parseDateInput(editValues.expectedEndDate),
           paymentStatus: editValues.paymentStatus,
+          note: editValues.note || null,
+          summaryFile: editValues.summaryFile || null,
         },
       });
       await refreshUsage();
       setEditingDetails(false);
       setEditValues(null);
       setEditErrors({});
-      showDialog({ tone: 'success', title: 'Cập nhật thành công' });
+      showDialog({ tone: 'success', title: 'Cập nhật thành công', message: 'Thông tin dịch vụ sau cập nhật đã được lưu', closeLabel: 'Đóng' });
     } catch (error) {
       const apiErrors = Object.fromEntries((error.fieldErrors || []).map((item) => [item.field, item.message]));
       setEditErrors(apiErrors);
@@ -294,6 +294,57 @@ export default function CustomerActiveServicePage({ customer, packageId: request
     } finally {
       setSavingDetails(false);
     }
+  };
+
+  const beginSessionEditing = () => {
+    if (!selectedSession) return;
+    setEditingResult(false);
+    setSessionEditDraft({
+      performedAt: selectedSession.performedAtValue,
+      result: selectedSession.result || '',
+      status: selectedSession.status,
+      customerConfirmation: selectedSession.customerConfirmation,
+      image: selectedSession.afterImages.find((item) => item.persisted)?.dataUrl || '',
+      note: selectedSession.notes || '',
+    });
+    setSessionEditErrors({});
+    setEditingSession(true);
+  };
+
+  const saveSessionDetails = async () => {
+    if (!selectedSession || !sessionEditDraft) return;
+    const errors = {};
+    if (!['Chưa thực hiện', 'Đang thực hiện', 'Chờ xác nhận', 'Đã hoàn thành'].includes(sessionEditDraft.status)) errors.status = 'Chọn trạng thái thực hiện hợp lệ.';
+    if (!['Chưa xác nhận', 'Đã xác nhận'].includes(sessionEditDraft.customerConfirmation)) errors.customerConfirmation = 'Chọn trạng thái xác nhận hợp lệ.';
+    if (sessionEditDraft.result.length > 255) errors.result = 'Kết quả tối đa 255 ký tự.';
+    if (sessionEditDraft.image.length > 255) errors.image = 'Đường dẫn ảnh tối đa 255 ký tự.';
+    if (sessionEditDraft.note.length > 255) errors.note = 'Ghi chú tối đa 255 ký tự.';
+    setSessionEditErrors(errors);
+    if (Object.keys(errors).length) return;
+    setSavingDetails(true);
+    try {
+      await apiRequest(`/api/service-packages/${encodeURIComponent(packageId)}/sessions/${encodeURIComponent(selectedSession.id)}`, {
+        method: 'PUT',
+        body: {
+          // datetime-local is already in the user's local wall-clock time. Keep that
+          // value when sending timestamp-without-time-zone to PostgreSQL.
+          performedAt: sessionEditDraft.performedAt ? `${sessionEditDraft.performedAt.replace('T', ' ')}:00` : null,
+          result: sessionEditDraft.result || null,
+          status: sessionEditDraft.status,
+          customerConfirmation: sessionEditDraft.customerConfirmation,
+          image: sessionEditDraft.image || null,
+          note: sessionEditDraft.note || null,
+        },
+      });
+      await refreshUsage();
+      setEditingSession(false);
+      setSessionEditDraft(null);
+      showDialog({ tone: 'success', title: 'Cập nhật thành công', message: 'Thông tin buổi dịch vụ đã được lưu.', closeLabel: 'Đóng' });
+    } catch (error) {
+      const apiErrors = Object.fromEntries((error.fieldErrors || []).map((item) => [item.field, item.message]));
+      setSessionEditErrors(apiErrors);
+      showApiError(notify, error, 'Không thể cập nhật buổi dịch vụ.');
+    } finally { setSavingDetails(false); }
   };
 
   const simulateCustomerConfirmation = async () => {
@@ -530,12 +581,12 @@ export default function CustomerActiveServicePage({ customer, packageId: request
         <dl className="customer-active-service-summary__facts">
           <div className="is-readonly"><dt>Mã đơn mua</dt><dd>{usage.purchaseOrder}</dd></div>
           <div className="is-readonly"><dt>Giá dịch vụ</dt><dd>{formatCurrency(usage.price)}</dd></div>
-          <div><dt>Ngày bắt đầu</dt><dd>{editingDetails ? <><input className="customer-active-service-edit-input" value={editValues.startDate} placeholder="dd/MM/yy" aria-invalid={Boolean(editErrors.startDate)} onChange={(event) => changeEditValue('startDate', event.target.value)} />{editErrors.startDate && <small className="customer-active-service-field-error">{editErrors.startDate}</small>}</> : usage.startDate || 'Chưa cập nhật'}</dd></div>
-          <div><dt>Ngày kết thúc dự kiến</dt><dd>{editingDetails ? <><input className="customer-active-service-edit-input" value={editValues.expectedEndDate} placeholder="dd/MM/yy" aria-invalid={Boolean(editErrors.expectedEndDate)} onChange={(event) => changeEditValue('expectedEndDate', event.target.value)} />{editErrors.expectedEndDate && <small className="customer-active-service-field-error">{editErrors.expectedEndDate}</small>}</> : usage.expectedEndDate || 'Chưa cập nhật'}</dd></div>
+          <div className="is-readonly"><dt>Ngày mua</dt><dd>{usage.purchaseDate}</dd></div>
           <div className="is-readonly"><dt>Khách hàng</dt><dd>{customer.name} <small>{customer.id} · {customer.phone}</small></dd></div>
-          <div><dt>Ngày mua</dt><dd>{editingDetails ? <><input className="customer-active-service-edit-input" value={editValues.purchaseDate} placeholder="dd/MM/yy" aria-invalid={Boolean(editErrors.purchaseDate)} onChange={(event) => changeEditValue('purchaseDate', event.target.value)} />{editErrors.purchaseDate && <small className="customer-active-service-field-error">{editErrors.purchaseDate}</small>}</> : usage.purchaseDate}</dd></div>
           <div><dt>Trạng thái thanh toán</dt><dd>{editingDetails ? <><select className="customer-active-service-edit-input" value={editValues.paymentStatus} aria-invalid={Boolean(editErrors.paymentStatus)} onChange={(event) => changeEditValue('paymentStatus', event.target.value)}><option value="">Chọn trạng thái</option><option value="Chưa thanh toán">Chưa thanh toán</option><option value="Đã thanh toán">Đã thanh toán</option></select>{editErrors.paymentStatus && <small className="customer-active-service-field-error">{editErrors.paymentStatus}</small>}</> : <StatusBadge tone={statusTone(usage.paymentStatus)}>{usage.paymentStatus}</StatusBadge>}</dd></div>
           <div className="is-readonly"><dt>Tổng số buổi</dt><dd>{usage.totalSessions} buổi</dd></div>
+          <div><dt>Ghi chú</dt><dd>{editingDetails ? <><textarea className="customer-active-service-edit-input customer-active-service-edit-input--textarea" value={editValues.note} aria-invalid={Boolean(editErrors.note)} onChange={(event) => changeEditValue('note', event.target.value)} />{editErrors.note && <small className="customer-active-service-field-error">{editErrors.note}</small>}</> : usage.note || '—'}</dd></div>
+          <div><dt>Tệp tổng hợp</dt><dd>{editingDetails ? <><input className="customer-active-service-edit-input" value={editValues.summaryFile} aria-invalid={Boolean(editErrors.summaryFile)} placeholder="Đường dẫn tệp" onChange={(event) => changeEditValue('summaryFile', event.target.value)} />{editErrors.summaryFile && <small className="customer-active-service-field-error">{editErrors.summaryFile}</small>}</> : usage.summaryFile ? <a href={usage.summaryFile} target="_blank" rel="noreferrer">Mở tệp tổng hợp</a> : '—'}</dd></div>
         </dl>
         <div className="customer-active-service-progress">
           <div className="customer-active-service-progress__status">
@@ -576,15 +627,29 @@ export default function CustomerActiveServicePage({ customer, packageId: request
         onClose={() => setSelectedSessionNumber(null)}
         size="large"
         className="customer-service-session-modal"
-        headerActions={selectedSession?.status === 'Chưa thực hiện' ? <Button onClick={startSession}>Bắt đầu buổi</Button> : selectedSession?.status === 'Đang thực hiện' ? <Button onClick={completeSession}>Hoàn thành buổi</Button> : null}
+        headerActions={selectedSession && (editingSession ? <>
+          <Button variant="secondary" onClick={() => { setEditingSession(false); setSessionEditDraft(null); setSessionEditErrors({}); }}>Hủy</Button>
+          <Button onClick={saveSessionDetails} disabled={savingDetails}>{savingDetails ? 'Đang lưu…' : 'Lưu'}</Button>
+        </> : <>
+          <Button variant="secondary" onClick={beginSessionEditing}><PenLine size={15} />Chỉnh sửa buổi</Button>
+          {selectedSession.status === 'Chưa thực hiện' ? <Button onClick={startSession}>Bắt đầu buổi</Button> : selectedSession.status === 'Đang thực hiện' ? <Button onClick={completeSession}>Hoàn thành buổi</Button> : null}
+        </>)}
       >
         {selectedSession && <div className="customer-service-session-detail">
-          <dl className="customer-service-session-detail__meta">
+          {editingSession && sessionEditDraft ? <div className="customer-service-session-edit-grid">
+            <label className="field"><span className="field__label">Ngày thực hiện</span><input className="field__control" type="datetime-local" value={sessionEditDraft.performedAt} onChange={(event) => setSessionEditDraft((current) => ({ ...current, performedAt: event.target.value }))} aria-invalid={Boolean(sessionEditErrors.performedAt)} />{sessionEditErrors.performedAt && <small className="field__error">{sessionEditErrors.performedAt}</small>}</label>
+            <label className="field"><span className="field__label">Thời lượng</span><input className="field__control" value={`${selectedSession.duration} phút`} readOnly /></label>
+            <label className="field"><span className="field__label">Trạng thái thực hiện</span><select className="field__control field__select" value={sessionEditDraft.status} onChange={(event) => setSessionEditDraft((current) => ({ ...current, status: event.target.value }))}><option>Chưa thực hiện</option><option>Đang thực hiện</option><option>Chờ xác nhận</option><option>Đã hoàn thành</option></select>{sessionEditErrors.status && <small className="field__error">{sessionEditErrors.status}</small>}</label>
+            <label className="field"><span className="field__label">Xác nhận khách hàng</span><select className="field__control field__select" value={sessionEditDraft.customerConfirmation} onChange={(event) => setSessionEditDraft((current) => ({ ...current, customerConfirmation: event.target.value }))}><option>Chưa xác nhận</option><option>Đã xác nhận</option></select>{sessionEditErrors.customerConfirmation && <small className="field__error">{sessionEditErrors.customerConfirmation}</small>}</label>
+            <label className="field customer-service-session-edit-grid__wide"><span className="field__label">Kết quả</span><textarea className="field__control" maxLength={255} value={sessionEditDraft.result} onChange={(event) => setSessionEditDraft((current) => ({ ...current, result: event.target.value }))} />{sessionEditErrors.result && <small className="field__error">{sessionEditErrors.result}</small>}</label>
+            <label className="field customer-service-session-edit-grid__wide"><span className="field__label">Hình ảnh</span><input className="field__control" maxLength={255} value={sessionEditDraft.image} onChange={(event) => setSessionEditDraft((current) => ({ ...current, image: event.target.value }))} />{sessionEditErrors.image && <small className="field__error">{sessionEditErrors.image}</small>}</label>
+            <label className="field customer-service-session-edit-grid__wide"><span className="field__label">Ghi chú</span><textarea className="field__control" maxLength={255} value={sessionEditDraft.note} onChange={(event) => setSessionEditDraft((current) => ({ ...current, note: event.target.value }))} />{sessionEditErrors.note && <small className="field__error">{sessionEditErrors.note}</small>}</label>
+          </div> : <dl className="customer-service-session-detail__meta">
             <div><dt>Thời gian thực hiện</dt><dd>{selectedSession.duration} phút</dd></div>
             <div><dt>Ngày thực hiện</dt><dd>{selectedSession.date}</dd></div>
             <div><dt>Trạng thái thực hiện</dt><dd><StatusBadge tone={statusTone(selectedSession.status)}>{selectedSession.status}</StatusBadge></dd></div>
             <div><dt>Xác nhận khách hàng</dt><dd><StatusBadge tone={statusTone(selectedSession.customerConfirmation)}>{selectedSession.customerConfirmation}</StatusBadge></dd></div>
-          </dl>
+          </dl>}
           {simulationEnabled && selectedSession.status === 'Chờ xác nhận' && selectedSession.customerConfirmation === 'Chưa xác nhận' && <div className="customer-active-service-simulation">
             <span>Demo/Zalo</span>
             <Button variant="secondary" className="customer-active-service-simulation__button" onClick={simulateCustomerConfirmation} disabled={simulatingConfirmation}><MessageCircleCheck size={16} />{simulatingConfirmation ? 'Đang cập nhật…' : 'Giả lập: khách đã xác nhận'}</Button>
@@ -614,7 +679,7 @@ export default function CustomerActiveServicePage({ customer, packageId: request
             <section className="customer-service-session-card customer-service-session-card--result">
               <h3>Kết quả điều trị</h3>
               <div className="customer-service-session-card__body">
-                {editingResult ? (
+                {editingSession ? <p>{sessionEditDraft?.result || 'Chưa có kết quả ghi nhận'}</p> : editingResult ? (
                   <div className="customer-service-session-result-editor">
                     <textarea value={resultDraft} onChange={(event) => setResultDraft(event.target.value)} aria-label="Kết quả điều trị" />
                     <div><Button variant="secondary" onClick={() => { setEditingResult(false, 'error'); setResultDraft(selectedSession.result || ''); }}>Hủy</Button><Button onClick={saveSessionResult}>Lưu kết quả</Button></div>

@@ -18,7 +18,7 @@ const halfHourLabels = Array.from({ length: 25 }, (_, index) => {
   const totalMinutes = 8 * 60 + index * 30;
   return `${String(Math.floor(totalMinutes / 60)).padStart(2, '0')}:${String(totalMinutes % 60).padStart(2, '0')}`;
 });
-const emptyAppointment = { customer: '', phone: '', service: '', date: '', start: '', end: '', note: '' };
+const emptyAppointment = { customer: '', phone: '', birthday: '', customerStatus: '', service: '', date: '', start: '', end: '', note: '' };
 
 function todayInVietnam() {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
@@ -28,6 +28,12 @@ function todayInVietnam() {
 
 function dateKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function latestBirthdayDate() {
+  const date = todayInVietnam();
+  date.setDate(date.getDate() - 1);
+  return dateKey(date);
 }
 
 function mondayOf(date) {
@@ -81,6 +87,7 @@ export default function AppointmentsPage() {
   const [noteEditorOpen, setNoteEditorOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
   const [appointmentForm, setAppointmentForm] = useState(emptyAppointment);
+  const [customerLookup, setCustomerLookup] = useState('idle');
   const [appointmentValidation, setAppointmentValidation] = useState(null);
   const [services, setServices] = useState([]);
   const [servicesError, setServicesError] = useState('');
@@ -154,6 +161,35 @@ export default function AppointmentsPage() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    if (editingId) return undefined;
+    const phone = appointmentForm.phone.replace(/\D/g, '');
+    if (!/^\d{10}$/.test(phone)) {
+      setCustomerLookup('idle');
+      setAppointmentForm((current) => ({ ...current, customer: '', birthday: '', customerStatus: '' }));
+      return undefined;
+    }
+    let active = true;
+    setCustomerLookup('loading');
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await apiRequest(`/api/customers?keyword=${encodeURIComponent(phone)}&limit=100`);
+        if (!active) return;
+        const found = (result.data ?? []).find((customer) => customer.phone === phone);
+        if (found) {
+          setAppointmentForm((current) => ({ ...current, customer: found.name, birthday: found.dateOfBirth, customerStatus: 'existing' }));
+          setCustomerLookup('existing');
+        } else {
+          setAppointmentForm((current) => ({ ...current, customer: '', birthday: '', customerStatus: 'new' }));
+          setCustomerLookup('new');
+        }
+      } catch (error) {
+        if (active) { setCustomerLookup('error'); showDialog({ title: 'Không thể tra cứu khách hàng', message: `Không thể kiểm tra số điện thoại: ${error.message}` }); }
+      }
+    }, 250);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [appointmentForm.phone, editingId, showDialog]);
+
   const openEdit = (appointment) => {
     if (!canManageAppointments) return;
     setEditingId(appointment.id);
@@ -180,11 +216,16 @@ export default function AppointmentsPage() {
   const createAppointment = async (event) => {
     event.preventDefault();
     if (!canManageAppointments) return;
-    if (!appointmentForm.customer.trim() || !appointmentForm.phone.trim() || !appointmentForm.service || !appointmentForm.date || !appointmentForm.start || !appointmentForm.end) {
+    const phone = appointmentForm.phone.replace(/\D/g, '');
+    const birthdayValid = appointmentForm.customerStatus === 'existing' || Boolean(appointmentForm.birthday && appointmentForm.birthday < dateKey(todayInVietnam()));
+    if (!/^\d{10}$/.test(phone) || !appointmentForm.customer.trim() || !birthdayValid || !appointmentForm.service || !appointmentForm.date || !appointmentForm.start || !appointmentForm.end || appointmentForm.end <= appointmentForm.start) {
       setAppointmentValidation({
         summary: 'Vui lòng bổ sung thông tin còn thiếu. Lịch hẹn chưa được lưu.',
-        phone: !appointmentForm.phone.trim() ? 'Vui lòng nhập số điện thoại.' : '',
+        phone: !/^\d{10}$/.test(phone) ? 'Số điện thoại phải gồm đúng 10 chữ số.' : '',
+        customer: !appointmentForm.customer.trim() ? 'Vui lòng nhập họ tên khách hàng.' : '',
+        birthday: !birthdayValid ? 'Vui lòng chọn ngày sinh nhỏ hơn hôm nay.' : '',
         service: !appointmentForm.service ? 'Vui lòng chọn dịch vụ.' : '',
+        end: !appointmentForm.end || appointmentForm.end <= appointmentForm.start ? 'Giờ kết thúc phải lớn hơn giờ bắt đầu.' : '',
       });
       return;
     }
@@ -212,17 +253,27 @@ export default function AppointmentsPage() {
       setEditingId(null);
     } else {
       try {
-        await apiRequest('/api/appointments', { method: 'POST', body: {
-          customerPhone: appointmentForm.phone.replace(/\D/g, ''),
+        const created = await apiRequest('/api/appointments', { method: 'POST', body: {
+          customerPhone: phone,
+          customerName: appointmentForm.customer.trim(),
+          customerBirthday: appointmentForm.birthday,
           serviceName: appointmentForm.service,
           date: appointmentForm.date,
           startTime: appointmentForm.start,
+          endTime: appointmentForm.end,
           note: appointmentForm.note,
         } });
+        setEvents((current) => [...current, {
+          id: created.id, date: created.date, start: created.startTime, end: created.endTime,
+          customer: created.customerName ?? appointmentForm.customer, phone: created.customerPhone ?? phone,
+          service: created.sessionName ?? appointmentForm.service, note: created.note ?? appointmentForm.note,
+          status: created.status, customerId: created.customerId, sessionId: created.sessionId, tone: 'mint',
+        }].filter((item) => item.date >= fromDate && item.date <= toDate));
         showDialog({ tone: 'success', title: 'Tạo lịch hẹn thành công', message: 'Thông tin lịch hẹn đã được lưu vào hệ thống.', size: 'medium', wideButton: true });
+        await apiRequest('/api/customers?limit=100').catch((error) => console.error('Không thể làm mới danh sách khách hàng:', error));
         const params = new URLSearchParams({ startDate: fromDate, endDate: toDate, limit: '100' });
-        const refreshed = await apiRequest(`/api/appointments?${params.toString()}`);
-        setEvents((refreshed.data ?? []).map((appointment) => ({ id: appointment.id, date: appointment.date, start: appointment.startTime, end: appointment.endTime,
+        const refreshed = await apiRequest(`/api/appointments?${params.toString()}`).catch((error) => { console.error('Không thể làm mới danh sách lịch hẹn:', error); return null; });
+        if (refreshed) setEvents((refreshed.data ?? []).map((appointment) => ({ id: appointment.id, date: appointment.date, start: appointment.startTime, end: appointment.endTime,
           customer: appointment.customerName ?? '', phone: appointment.customerPhone ?? '', service: appointment.sessionName ?? '', note: appointment.note ?? '', status: appointment.status, tone: 'mint' })));
       } catch (error) {
         if (error.code === 'CUSTOMER_BLACKLISTED') setBusinessWarning(error.fieldErrors?.[0]?.message || 'Vui lòng cân nhắc trước khi lưu; bạn vẫn có thể tạo lịch hẹn.');
@@ -231,8 +282,7 @@ export default function AppointmentsPage() {
           setAppointmentConflict({ message: detail?.message || 'Giờ hẹn bị trùng lịch với lịch khác', suggestions: detail?.suggestions || [] });
         }
         else if (error.status === 409) showDialog({ title: 'Không thể tạo lịch hẹn', message: error.message });
-        else if (error.isServerError || error.code === 'NETWORK_ERROR') return;
-        else showDialog({ title: 'Thông tin không hợp lệ', message: error.message || 'Yêu cầu nhập lại' });
+        else showDialog({ title: 'Không thể tạo lịch hẹn', message: `Không thể lưu lịch hẹn: ${error.message || 'Vui lòng thử lại.'}` });
         return;
       }
     }
@@ -359,13 +409,21 @@ export default function AppointmentsPage() {
 
       <Modal open={formOpen} title={editingId ? 'ĐIỀU CHỈNH LỊCH HẸN' : 'TẠO LỊCH HẸN'} onClose={() => setConfirmDiscardOpen(true)} size="large">
         <form className="form-grid" onSubmit={createAppointment} autoComplete="off" noValidate>
-          <TextField label="Tên khách hàng *" value={appointmentForm.customer} onChange={(event) => setAppointmentForm({ ...appointmentForm, customer: event.target.value })} autoComplete="off" readOnly={Boolean(editingId)} required />
-          <TextField label="Số điện thoại *" type="tel" value={appointmentForm.phone} onChange={(event) => { setAppointmentForm({ ...appointmentForm, phone: event.target.value }); setBusinessWarning(''); setAppointmentValidation((current) => current ? { ...current, phone: '', summary: '' } : current); }} autoComplete="off" readOnly={Boolean(editingId)} error={appointmentValidation?.phone} required />
+          <TextField label="Số điện thoại *" type="tel" inputMode="numeric" maxLength={10} value={appointmentForm.phone} onChange={(event) => { setAppointmentForm({ ...appointmentForm, phone: event.target.value.replace(/\D/g, '').slice(0, 10) }); setBusinessWarning(''); setAppointmentValidation((current) => current ? { ...current, phone: '', summary: '' } : current); }} autoComplete="off" readOnly={Boolean(editingId)} error={appointmentValidation?.phone} required />
+          {appointmentForm.customerStatus === 'new' ? <>
+            <TextField label="Họ tên *" value={appointmentForm.customer} onChange={(event) => setAppointmentForm((current) => ({ ...current, customer: event.target.value }))} autoComplete="off" error={appointmentValidation?.customer} required />
+            <TextField label="Ngày sinh *" type="date" value={appointmentForm.birthday} max={latestBirthdayDate()} onChange={(event) => setAppointmentForm((current) => ({ ...current, birthday: event.target.value }))} error={appointmentValidation?.birthday} required />
+            <p className="form-grid__wide" role="status">Khách mới - hồ sơ sẽ được tạo tự động</p>
+          </> : <>
+            <TextField label="Họ tên *" value={appointmentForm.customer} autoComplete="off" readOnly required />
+            {appointmentForm.customerStatus === 'existing' && <p className="form-grid__wide" role="status">Khách cũ</p>}
+            {customerLookup === 'loading' && <p className="form-grid__wide" role="status">Đang kiểm tra số điện thoại...</p>}
+          </>}
           <SelectField label="Dịch vụ *" value={appointmentForm.service} onChange={(event) => { setAppointmentForm((current) => ({ ...current, service: event.target.value, end: appointmentEndTime(services, event.target.value, current.start) })); setAppointmentValidation((current) => current ? { ...current, service: '', summary: '' } : current); }} options={[{ value: '', label: services.length ? 'Chọn dịch vụ' : 'Chưa có dịch vụ' }, ...services.map((service) => service.name)]} disabled={Boolean(editingId) || services.length === 0} error={appointmentValidation?.service} required />
           {servicesError && <p className="field__error form-grid__wide" role="alert">{servicesError}</p>}
           <TextField label="Ngày hẹn *" type="date" value={appointmentForm.date} onChange={(event) => setAppointmentForm({ ...appointmentForm, date: event.target.value })} required />
           <TextField label="Giờ hẹn *" type="time" value={appointmentForm.start} onChange={(event) => setAppointmentForm((current) => ({ ...current, start: event.target.value, end: appointmentEndTime(services, current.service, event.target.value) }))} required />
-          <TextField label="Giờ kết thúc *" type="time" value={appointmentForm.end} readOnly required />
+          <TextField label="Giờ kết thúc *" type="time" value={appointmentForm.end} onChange={(event) => setAppointmentForm((current) => ({ ...current, end: event.target.value }))} required />
           <label className="field form-grid__wide"><span className="field__label">Ghi chú</span><textarea className="field__control appointment-form__note" value={appointmentForm.note} onChange={(event) => setAppointmentForm({ ...appointmentForm, note: event.target.value })} /></label>
           {appointmentValidation?.summary && <div className="appointment-form-validation form-grid__wide" role="alert"><strong>Thông tin chưa đầy đủ!</strong><span>{appointmentValidation.summary}</span></div>}
           {businessWarning && <div className="appointment-form-validation appointment-form-validation--warning form-grid__wide" role="status"><strong>Khách hàng thuộc danh sách đen</strong><span>{businessWarning}</span></div>}

@@ -32,6 +32,27 @@ function formatDate(value) {
   return `${day}/${month}/${year}`;
 }
 
+function mapCosmetics(rows) {
+  return rows.map((product) => ({
+    id: String(product.id ?? product.maMyPham ?? '').trim(),
+    name: product.name ?? product.tenMyPham ?? '',
+    image: product.image ?? product.hinhAnh ?? '',
+    unit: product.unit ?? product.donViTinh ?? '',
+    category: product.category ?? product.phanLoai ?? '',
+    stock: Number(product.stock ?? product.soLuongTonKho ?? 0),
+    price: Number(product.salePrice ?? product.giaBan ?? 0),
+  })).filter((product) => product.id && product.name);
+}
+
+function mapLots(rows) {
+  return rows.reduce((grouped, lot) => {
+    const productLots = grouped[lot.cosmeticId] ?? [];
+    productLots.push({ id: lot.id, status: 'Còn hạn', manufactureDate: String(lot.productionDate).slice(0, 10), expiryDate: String(lot.expiryDate).slice(0, 10), stock: Number(lot.stock) });
+    grouped[lot.cosmeticId] = productLots;
+    return grouped;
+  }, {});
+}
+
 function toLotCode(date, suffix) {
   if (!date) return '';
   const [year, month, day] = date.split('-');
@@ -88,22 +109,8 @@ export default function InboundPage() {
       .then(([receipts, cosmetics, lots]) => {
         if (!active) return;
         setRecords(receipts.map((record) => ({ ...record, date: formatDate(String(record.receiptDate).slice(0, 10)) })));
-        setProducts(cosmetics.map((product) => ({
-          id: String(product.id ?? product.maMyPham ?? '').trim(),
-          name: product.name ?? product.tenMyPham ?? '',
-          image: product.image ?? product.hinhAnh ?? '',
-          unit: product.unit ?? product.donViTinh ?? '',
-          category: product.category ?? product.phanLoai ?? '',
-          stock: Number(product.stock ?? product.soLuongTonKho ?? 0),
-          price: Number(product.salePrice ?? product.giaBan ?? 0),
-        })).filter((product) => product.id && product.name));
-        const groupedLots = {};
-        lots.forEach((lot) => {
-          const productLots = groupedLots[lot.cosmeticId] ?? [];
-          productLots.push({ id: lot.id, status: 'Còn hạn', manufactureDate: String(lot.productionDate).slice(0, 10), expiryDate: String(lot.expiryDate).slice(0, 10), stock: Number(lot.stock) });
-          groupedLots[lot.cosmeticId] = productLots;
-        });
-        setLotsByProduct(groupedLots);
+        setProducts(mapCosmetics(cosmetics));
+        setLotsByProduct(mapLots(lots));
       })
       .catch((error) => showDialog({ title: 'Không tải được dữ liệu phiếu nhập', message: error.message }))
       .finally(() => { if (active) setLoading(false); });
@@ -307,8 +314,14 @@ export default function InboundPage() {
           }),
         },
       });
-      const rows = await apiList('/api/stock-receipts');
-      setRecords(rows.map((record) => ({ ...record, date: formatDate(String(record.receiptDate).slice(0, 10)) })));
+      const [rowsResult, cosmeticsResult, lotsResult] = await Promise.allSettled([
+        apiList('/api/stock-receipts'),
+        apiList('/api/cosmetics'),
+        apiList('/api/lots'),
+      ]);
+      if (rowsResult.status === 'fulfilled') setRecords(rowsResult.value.map((record) => ({ ...record, date: formatDate(String(record.receiptDate).slice(0, 10)) })));
+      if (cosmeticsResult.status === 'fulfilled') setProducts(mapCosmetics(cosmeticsResult.value));
+      if (lotsResult.status === 'fulfilled') setLotsByProduct(mapLots(lotsResult.value));
       showDialog({ tone: 'success', title: 'Tạo phiếu nhập thành công', message: 'Phiếu nhập, lô hàng và số lượng tồn đã được lưu vào SQL.', size: 'medium' });
       navigate(`/phieu-nhap-kho/${saved.id}`);
     } catch (error) {

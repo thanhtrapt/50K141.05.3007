@@ -353,6 +353,55 @@
             "$ref": "#/components/responses/Success"
           }
         }
+      },
+      "put": {
+        "tags": [
+          "Khách hàng và liệu trình"
+        ],
+        "summary": "Cập nhật trạng thái thanh toán, ghi chú và tệp tổng hợp của liệu trình",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PackageId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/service-packages/{packageId}/sessions/{sessionId}": {
+      "put": {
+        "tags": [
+          "Khách hàng và liệu trình"
+        ],
+        "summary": "Cập nhật thông tin buổi dịch vụ",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PackageId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
       }
     },
     "/api/service-packages/{packageId}/sessions/{sessionId}/start": {

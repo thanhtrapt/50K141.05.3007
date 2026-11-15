@@ -13,6 +13,7 @@ import { apiList, apiRequest } from '../../api.js';
 import CustomerDetailPage from './CustomerDetailPage.jsx';
 import CustomerFormPage from './CustomerFormPage.jsx';
 import CustomerActiveServicePage from './CustomerActiveServicePage.jsx';
+import CustomerRetailSalePage from './CustomerRetailSalePage.jsx';
 
 export default function CustomersPage({ recordsOnly = false }) {
   const [items, setItems] = useState([]);
@@ -21,7 +22,8 @@ export default function CustomersPage({ recordsOnly = false }) {
   const [loadError, setLoadError] = useState('');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
-  const { pathname, search } = useLocation();
+  const location = useLocation();
+  const { pathname, search, state: routeState } = location;
   const navigate = useNavigate();
   const { showDialog } = useFeedback();
 
@@ -29,6 +31,7 @@ export default function CustomersPage({ recordsOnly = false }) {
   const routeParts = pathname.slice(basePath.length).split('/').filter(Boolean);
   const packageId = new URLSearchParams(search).get('packageId');
   const isCreate = routeParts[0] === 'tao-moi';
+  const isRetailSale = routeParts[1] === 'ghi-nhan-mua-them';
   const editingId = routeParts.length === 2 && routeParts[1] === 'chinh-sua' ? routeParts[0] : null;
   const customerId = !isCreate && routeParts[0] !== 'undefined' ? routeParts[0] : null;
   const recordRow = items.find((customer) => customer.id === editingId);
@@ -65,7 +68,16 @@ export default function CustomersPage({ recordsOnly = false }) {
   const openCreate = () => navigate(`${basePath}/tao-moi`);
   const openDetail = (customer) => navigate(`${basePath}/${customer.id}`);
   const openEdit = (customer) => navigate(`${basePath}/${customer.id}/chinh-sua`);
+  const openRetailSale = (customerId, customerDraft, draftPurchases = []) => navigate(
+    `${basePath}/${customerId}/ghi-nhan-mua-them`,
+    { state: { customerDraft, draftPurchases, returnPath: `${basePath}/${customerId}` } },
+  );
   const cancelForm = () => navigate(editingId ? `${basePath}/${editingId}` : basePath);
+  const refreshCustomerDetail = async (id, options = {}) => {
+    const updated = await apiRequest(`/api/customers/${encodeURIComponent(id)}`, options);
+    setSelectedDetail(updated);
+    return updated;
+  };
 
   const saveCustomer = async (form) => {
     const [day, month, year] = String(form.birthday || '').split('/');
@@ -97,9 +109,13 @@ export default function CustomersPage({ recordsOnly = false }) {
     showDialog(saleError
       ? { title: 'Hồ sơ đã lưu, giao dịch bán lẻ chưa hoàn tất', message: saleError }
       : { tone: 'success', title: editingId ? 'Cập nhật thành công' : 'Tạo hồ sơ khách hàng thành công', message: 'Dữ liệu đã được lưu vào cơ sở dữ liệu SQL.' });
-    navigate(editingId ? `${basePath}/${editingId}` : basePath);
+    navigate(editingId ? `${basePath}/${editingId}` : saleGroups.size ? `${basePath}/${saved.id}` : basePath);
     return saved;
   };
+
+  const saveDraftPurchases = (purchases, customerDraft) => navigate(`${basePath}/tao-moi`, {
+    state: { customerDraft, draftPurchases: purchases },
+  });
 
   const deleteCustomer = async () => {
     try {
@@ -115,12 +131,44 @@ export default function CustomersPage({ recordsOnly = false }) {
   if (loading) return <div className="panel data-loading" role="status">Đang tải dữ liệu khách hàng từ SQL…</div>;
   if (loadError && !items.length) return <div className="panel data-error" role="alert">Không tải được dữ liệu khách hàng: {loadError}</div>;
 
+  if (isRetailSale) {
+    if (isCreate) {
+      return (
+        <CustomerRetailSalePage
+          customer={{ id: nextId, name: routeState?.customerDraft?.name || '', phone: routeState?.customerDraft?.phone || '', birthday: routeState?.customerDraft?.birthday || '' }}
+          initialItems={routeState?.draftPurchases ?? []}
+          draftMode
+          onCancel={(draftState) => navigate(`${basePath}/tao-moi`, { state: draftState ?? { customerDraft: routeState?.customerDraft, draftPurchases: routeState?.draftPurchases } })}
+          onSaveDraft={(purchases, customerDraft) => saveDraftPurchases(purchases, customerDraft)}
+        />
+      );
+    }
+    if (!selected) return <div className="panel data-loading" role="status">Đang tải hồ sơ khách hàng…</div>;
+    return (
+      <CustomerRetailSalePage
+        customer={selected}
+        onCancel={() => navigate(`${basePath}/${customerId}`)}
+        onSaved={() => navigate(`${basePath}/${customerId}`)}
+      />
+    );
+  }
+
   if (isCreate || editingId) {
     if (editingId && !record) {
       return <FeatureNotFound heading="DANH SÁCH HỒ SƠ KHÁCH HÀNG" message="Không tìm thấy khách hàng phù hợp!" onBack={() => navigate(basePath)} />;
     }
 
-    return <CustomerFormPage record={record} nextId={nextId} onCancel={cancelForm} onSave={saveCustomer} />;
+    return (
+      <CustomerFormPage
+        record={record}
+        nextId={nextId}
+        onCancel={cancelForm}
+        onSave={saveCustomer}
+        onAddPurchases={isCreate ? (form, purchases) => openRetailSale('tao-moi', form, purchases) : undefined}
+        draft={routeState?.customerDraft}
+        draftPurchases={routeState?.draftPurchases}
+      />
+    );
   }
 
   if (customerId) {
@@ -148,6 +196,8 @@ export default function CustomersPage({ recordsOnly = false }) {
         onBack={() => navigate(basePath)}
         onEdit={() => openEdit(selected)}
         onDelete={deleteCustomer}
+        onRefresh={refreshCustomerDetail}
+        onRecordSale={() => openRetailSale(customerId)}
       />
     );
   }

@@ -1,8 +1,7 @@
 import { getPool,inTransaction,requestFor,dbTypes } from './database.js';
 import { AppError,badRequest,notFound } from './errors.js';
 import { insertAudit,nextCode } from './repositories.js';
-import { normalizeVietnamese,paginate } from './utils.js';
-import { updateStockAlerts } from './stockService.js';
+import { normalizeVietnamese,paginate,parseDate } from './utils.js';
 import { enqueueNotification,createConfirmationUrl } from './notificationService.js';
 import { config } from './config.js';
 
@@ -51,6 +50,16 @@ async function findCustomer(id,transaction) {
   return {...row,id:row.id.trim(),dateOfBirth:dateText(row.dateOfBirth),cancellationCount:Number(row.cancellationCount)};
 }
 
+async function setSupabaseAuthContext(transaction,user) {
+  const identity=(await requestFor(transaction).input('accountId',dbTypes.Char(10),user.id)
+    .query('SELECT auth_user_id AS authUserId FROM public.taikhoan WHERE matk=@accountId LIMIT 1')).recordset[0];
+  const authUserId=String(identity?.authUserId??'').trim();
+  if(!authUserId)throw error(403,'SUPABASE_IDENTITY_MISSING','Tài khoản chưa được liên kết với Supabase Auth.');
+  const claims=JSON.stringify({sub:authUserId,role:'authenticated'});
+  await requestFor(transaction).input('authUserId',dbTypes.VarChar(64),authUserId).input('claims',dbTypes.VarChar(2000),claims)
+    .query("SELECT set_config('request.jwt.claim.sub',@authUserId,true),set_config('request.jwt.claims',@claims,true)");
+}
+
 async function blacklistLimit() {
   // CauHinhHeThong không tồn tại trong schema thật; dùng ngưỡng mặc định.
   return 3;
@@ -67,7 +76,7 @@ export async function listCustomers(query={}) {
 async function packageSummaries(customerId,transaction) {
   const rows=(await requestFor(transaction).input('customer',dbTypes.Char(10),customerId).query(`SELECT d.maDonMua AS id,d.ngayMua AS purchaseDate,d.trangThaiThanhToan AS paymentStatus,
     d.trangThaiHoanThanh AS completionStatus,d.soBuoiDaThucHien AS sessionsCompleted,s.giaDV AS purchasePrice,NULL AS endedAt,
-    s.maDichVu AS serviceId,s.tenDV AS serviceName,s.tongSoBuoi AS totalSessions
+    s.maDichVu AS serviceId,s.tenDV AS serviceName,s.tongSoBuoi AS totalSessions,d.ghiChu AS note,d.fileTongHop AS summaryFile
     FROM dbo.DonMuaDV d JOIN dbo.DichVu s ON s.maDichVu=d.maDichVu WHERE d.maKhachHang=@customer ORDER BY d.ngayMua DESC,d.maDonMua DESC`)).recordset;
   return rows.map(row=>({...row,id:row.id.trim(),serviceId:row.serviceId.trim(),purchaseDate:row.purchaseDate,
     sessionsCompleted:Number(row.sessionsCompleted),purchasePrice:Number(row.purchasePrice),totalSessions:Number(row.totalSessions)}));
@@ -75,7 +84,7 @@ async function packageSummaries(customerId,transaction) {
 
 async function retailPurchaseRows(customerId,transaction) {
   return (await requestFor(transaction).input('customer',dbTypes.Char(10),customerId).query(`SELECT o.maDon AS saleId,o.ngayMua AS purchaseDate,p.maMyPham AS cosmeticId,
-    p.tenMyPham AS cosmeticName,l.soLuong AS quantity,l.donGia AS unitPrice,l.thanhTien AS lineTotal,l.maLo AS batchId
+    o.tongTien AS saleTotal,l.maCT_Don AS lineId,p.tenMyPham AS cosmeticName,l.soLuong AS quantity,l.donGia AS unitPrice,l.thanhTien AS lineTotal,l.maLo AS batchId
     FROM dbo.DonGhiNhanBan o JOIN dbo.CT_DonGhiNhanBan l ON l.maDon=o.maDon JOIN dbo.LoHang b ON b.maLo=l.maLo
     JOIN dbo.MyPham p ON p.maMyPham=b.maMyPham WHERE o.maKhachHang=@customer ORDER BY o.ngayMua DESC,o.maDon DESC,l.maCT_Don`)).recordset;
 }
@@ -85,16 +94,18 @@ export async function getCustomer(id) {
   const threshold=await blacklistLimit();
   const grouped=new Map();
   for(const row of purchasedProducts) {
-    const key=`${row.saleId}|${row.cosmeticId}`;const existing=grouped.get(key);
-    if(existing){existing.quantity+=Number(row.quantity);existing.lineTotal+=Number(row.lineTotal);}
-    else grouped.set(key,{saleId:row.saleId.trim(),purchaseDate:row.purchaseDate,cosmeticId:row.cosmeticId.trim(),cosmeticName:row.cosmeticName,
-      quantity:Number(row.quantity),unitPrice:Number(row.unitPrice),lineTotal:Number(row.lineTotal)});
+    const key=row.saleId.trim();
+    let sale=grouped.get(key);
+    if(!sale){sale={saleId:key,purchaseDate:row.purchaseDate,total:Number(row.saleTotal)||0,items:[]};grouped.set(key,sale);}
+    sale.items.push({id:row.lineId.trim(),cosmeticId:row.cosmeticId.trim(),cosmeticName:row.cosmeticName,
+      quantity:Number(row.quantity),unitPrice:Number(row.unitPrice),lineTotal:Number(row.lineTotal),batchId:row.batchId?.trim()||null});
   }
-  const productRows=[...grouped.values()];
+  const sales=[...grouped.values()];
+  const productRows=sales.flatMap(sale=>sale.items.map(item=>({...item,saleId:sale.saleId,purchaseDate:sale.purchaseDate})));
   return {...customer,isBlacklisted:customer.cancellationCount>=threshold,blacklistThreshold:threshold,
     activeServices:packages.filter(item=>item.completionStatus!=='Đã hoàn thành'),serviceHistory:packages.filter(item=>item.completionStatus==='Đã hoàn thành'),
-    purchasedProducts:productRows,
-    emptyLabels:{additionalServices:packages.some(item=>item.completionStatus!=='Đã hoàn thành')?null:'Chưa có dịch vụ phát sinh',purchasedProducts:productRows.length?null:'Chưa có sản phẩm mua thêm',serviceHistory:packages.some(item=>item.completionStatus==='Đã hoàn thành')?null:'Chưa có lịch sử dịch vụ'},
+    purchasedProducts:productRows,purchasedSales:sales,
+    emptyLabels:{additionalServices:packages.length?null:'Chưa có dịch vụ phát sinh',purchasedProducts:sales.length?null:'Chưa có sản phẩm mua thêm',serviceHistory:packages.some(item=>item.completionStatus==='Đã hoàn thành')?null:'Chưa có lịch sử dịch vụ'},
     actions:{recordRetailSale:true,viewServiceHistory:true}};
 }
 
@@ -161,47 +172,37 @@ export async function listCustomerServiceHistory(customerId,query={}) {
 export async function assignServicePackage(customerId,body,user) {
   if(!body||typeof body!=='object'||Array.isArray(body))body={};
   const serviceId=String(body.serviceId??body.maDichVu??'').trim();
-  const paymentStatus=String(body.paymentStatus??body.trangThaiThanhToan??'Chưa thanh toán');
-  const purchaseDate=body.purchaseDate??body.ngayMua??new Date();
-  const rawPurchasePrice=body.purchasePrice??body.giaMua;
-  const requestedPurchasePrice=rawPurchasePrice==null?null:money(rawPurchasePrice);
+  const paid=body.paid===true||body.paymentStatus==='Đã thanh toán'||body.trangThaiThanhToan==='Đã thanh toán';
   const note=body.note??body.ghiChu??null;
   const errors=[];
   if(!serviceId)errors.push({field:'serviceId',message:'Dịch vụ không được bỏ trống'});
-  if(!['Đã thanh toán','Chưa thanh toán'].includes(paymentStatus))errors.push({field:'paymentStatus',message:'Trạng thái thanh toán không hợp lệ'});
-  if(rawPurchasePrice!=null&&requestedPurchasePrice===null)errors.push({field:'purchasePrice',message:'Giá dịch vụ phải là số nguyên dương'});
   if(note!=null&&String(note).length>255)errors.push({field:'note',message:'Ghi chú tối đa 255 ký tự'});
   if(errors.length)throw badRequest('Thông tin chưa hoàn tất, yêu cầu nhập lại',errors);
-  return inTransaction(async transaction=>{
-    const customer=await findCustomer(customerId,transaction);
-    const service=(await requestFor(transaction).input('id',dbTypes.Char(10),serviceId).query(`SELECT maDichVu AS "maDichVu",tenDV AS "tenDV",giaDV AS "giaDV",tongSoBuoi AS "tongSoBuoi" FROM dbo.DichVu WITH (UPDLOCK,HOLDLOCK)
-      WHERE maDichVu=@id`)).recordset[0];
-    if(!service)throw notFound('Không tìm thấy dịch vụ phù hợp!');
-    const templates=(await requestFor(transaction).input('id',dbTypes.Char(10),serviceId).query(`SELECT maCT_DichVu AS "maCT_DichVu",tenBuoi AS "tenBuoi",kyThuat AS "kyThuat",thoiGianThucHien AS "thoiGianThucHien",myPhamSD AS "myPhamSD"
-      FROM dbo.CT_DichVu WITH (HOLDLOCK) WHERE maDichVu=@id ORDER BY maCT_DichVu`)).recordset;
-    if(templates.length!==Number(service.tongSoBuoi))throw error(409,'SERVICE_TEMPLATE_MISMATCH','Cấu hình số buổi của dịch vụ chưa khớp chi tiết buổi.');
-    const purchasePrice=requestedPurchasePrice??Number(service.giaDV);
-    const packageId=await nextCode('LHD',transaction);
-    const dateValue=purchaseDate instanceof Date?purchaseDate:new Date(purchaseDate);
-    if(Number.isNaN(dateValue.valueOf()))throw badRequest('Ngày mua dịch vụ không hợp lệ.',[{field:'purchaseDate',message:'Ngày mua dịch vụ không hợp lệ'}]);
-    await requestFor(transaction).input('id',dbTypes.Char(10),packageId).input('date',dbTypes.DateTime2,dateValue)
-      .input('payment',dbTypes.NVarChar(50),paymentStatus).input('note',dbTypes.NVarChar(255),note==null?null:String(note))
-      .input('service',dbTypes.Char(10),serviceId).input('customer',dbTypes.Char(10),customerId)
-      .input('price',dbTypes.Money,purchasePrice).input('startDate',dbTypes.Date,dateText(dateValue)).query(`INSERT INTO dbo.DonMuaDV(maDonMua,ngayMua,trangThaiThanhToan,trangThaiHoanThanh,fileTongHop,soBuoiDaThucHien,ghiChu,maDichVu,maKhachHang,ngayBatDau)
-        VALUES(@id,@date,@payment,N'Chưa thực hiện',NULL,0,@note,@service,@customer,@startDate)`);
-    for(const template of templates) {
-      const sessionId=await nextCode('CM',transaction);
-      await requestFor(transaction).input('id',dbTypes.Char(10),sessionId).input('name',dbTypes.NVarChar(20),template.tenBuoi)
-        .input('servicePackage',dbTypes.Char(10),packageId).input('templateId',dbTypes.Char(10),template.maCT_DichVu)
-        .query(`INSERT INTO dbo.CT_DonMua(maCT_DonMua,tenBuoi,trangThaiThucHien,xacNhanKH,maDonMua,maCT_DichVu)
-          VALUES(@id,@name,N'Chưa thực hiện',N'Chưa xác nhận',@servicePackage,@templateId)`);
-    }
-    const after={maDonMua:packageId,maKhachHang:customerId,maDichVu:serviceId,ngayMua:dateValue,trangThaiThanhToan:paymentStatus,
-      trangThaiHoanThanh:'Chưa thực hiện',giaMua:purchasePrice,tongSoBuoi:templates.length,sessions:templates};
-    await insertAudit({transaction,user,action:'Gán liệu trình cho khách hàng',entity:'DonMuaDV',entityId:packageId,before:null,after});
-    return {id:packageId.trim(),customerId:customer.id,serviceId:service.maDichVu.trim(),serviceName:service.tenDV,purchaseDate:dateValue,
-      paymentStatus,completionStatus:'Chưa thực hiện',purchasePrice,totalSessions:templates.length,sessionsCompleted:0,message:'Gán dịch vụ cho khách hàng thành công'};
-  });
+  try {
+    return await inTransaction(async transaction=>{
+      const customer=await findCustomer(customerId,transaction);
+      const service=(await requestFor(transaction).input('id',dbTypes.Char(10),serviceId).query(`SELECT maDichVu AS "maDichVu",tenDV AS "tenDV",giaDV AS "giaDV",tongSoBuoi AS "tongSoBuoi" FROM dbo.DichVu WHERE maDichVu=@id`)).recordset[0];
+      if(!service)throw notFound('Không tìm thấy dịch vụ phù hợp!');
+      await setSupabaseAuthContext(transaction,user);
+      let packageId;
+      try {
+        packageId=(await requestFor(transaction).input('customer',dbTypes.VarChar(10),customerId).input('service',dbTypes.VarChar(10),serviceId)
+          .input('paid',dbTypes.Bit,paid).input('note',dbTypes.VarChar(255),note==null?null:String(note))
+          .query('SELECT public.fn_tao_don_mua_dich_vu(@customer,@service,@paid,@note) AS id')).recordset[0]?.id;
+      } catch(rpcError) {
+        console.error('Lỗi fn_tao_don_mua_dich_vu:',rpcError);
+        throw error(422,'SERVICE_PACKAGE_RPC_FAILED',rpcError.message);
+      }
+      if(!packageId)throw error(500,'SERVICE_PACKAGE_RPC_EMPTY','Hàm tạo dịch vụ không trả về mã đơn mua.');
+      return {id:String(packageId).trim(),customerId:customer.id,serviceId:service.maDichVu.trim(),serviceName:service.tenDV,
+        purchasePrice:Number(service.giaDV),paymentStatus:paid?'Đã thanh toán':'Chưa thanh toán',completionStatus:'Chưa thực hiện',
+        totalSessions:Number(service.tongSoBuoi),sessionsCompleted:0,note:note??null,message:'Thêm dịch vụ thành công'};
+    });
+  } catch (cause) {
+    if (cause instanceof AppError) throw cause;
+    console.error('Không thể thêm dịch vụ cho hồ sơ khách hàng:',cause);
+    throw error(500,'SERVICE_PACKAGE_CREATE_FAILED',`Không thể thêm dịch vụ: ${cause?.message || 'Lỗi cơ sở dữ liệu không xác định.'}`);
+  }
 }
 
 function isValidPackageDate(value) {
@@ -212,51 +213,36 @@ function isValidPackageDate(value) {
 
 export async function updateServicePackageDetails(id, body, user) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) body = {};
-  const allowedFields = new Set(['purchaseDate', 'startDate', 'expectedEndDate', 'paymentStatus']);
+  const allowedFields = new Set(['paymentStatus', 'note', 'summaryFile']);
   const errors = [];
   for (const field of Object.keys(body)) {
     if (!allowedFields.has(field)) errors.push({ field, message: 'Trường này không được phép chỉnh sửa.' });
   }
-
-  const purchaseDate = String(body.purchaseDate ?? '').trim();
-  const startDate = String(body.startDate ?? '').trim();
-  const expectedEndDate = String(body.expectedEndDate ?? '').trim();
-  const paymentStatus = String(body.paymentStatus ?? '').trim();
-  if (!purchaseDate) errors.push({ field: 'purchaseDate', message: 'Ngày mua không được để trống.' });
-  else if (!isValidPackageDate(purchaseDate)) errors.push({ field: 'purchaseDate', message: 'Ngày mua không hợp lệ.' });
-  if (!startDate) errors.push({ field: 'startDate', message: 'Ngày bắt đầu không được để trống.' });
-  else if (!isValidPackageDate(startDate)) errors.push({ field: 'startDate', message: 'Ngày bắt đầu không hợp lệ.' });
-  if (expectedEndDate && !isValidPackageDate(expectedEndDate)) errors.push({ field: 'expectedEndDate', message: 'Ngày kết thúc dự kiến không hợp lệ.' });
-  if (expectedEndDate && isValidPackageDate(startDate) && expectedEndDate < startDate) {
-    errors.push({ field: 'expectedEndDate', message: 'Ngày kết thúc dự kiến không được trước ngày bắt đầu.' });
-  }
-  if (!['Chưa thanh toán', 'Đã thanh toán'].includes(paymentStatus)) {
-    errors.push({ field: 'paymentStatus', message: 'Trạng thái thanh toán không hợp lệ.' });
-  }
+  if (!Object.keys(body).length) errors.push({ field: 'body', message: 'Chọn ít nhất một thông tin cần cập nhật.' });
+  const paymentStatus = body.paymentStatus === undefined ? undefined : String(body.paymentStatus).trim();
+  const note = body.note === undefined ? undefined : body.note == null ? null : String(body.note);
+  const summaryFile = body.summaryFile === undefined ? undefined : body.summaryFile == null ? null : String(body.summaryFile).trim();
+  if (paymentStatus !== undefined && !['Chưa thanh toán', 'Đã thanh toán'].includes(paymentStatus)) errors.push({ field: 'paymentStatus', message: 'Trạng thái thanh toán không hợp lệ.' });
+  if (note != null && note.length > 255) errors.push({ field: 'note', message: 'Ghi chú tối đa 255 ký tự.' });
+  if (summaryFile != null && summaryFile.length > 255) errors.push({ field: 'summaryFile', message: 'Tệp tổng hợp tối đa 255 ký tự.' });
   if (errors.length) throw error(400, 'VALIDATION_ERROR', 'Thông tin liệu trình chưa hợp lệ.', errors);
 
   return inTransaction(async transaction => {
-    const before = (await requestFor(transaction).input('id', dbTypes.Char(10), id)
-      .query("SELECT maDonMua AS id,ngayMua AS purchaseDate,ngayBatDau AS startDate, " +
-        "ngayKetThucDuKien AS expectedEndDate,trangThaiThanhToan AS paymentStatus FROM dbo.DonMuaDV WITH (UPDLOCK,HOLDLOCK) WHERE maDonMua=@id")).recordset[0];
-    if (!before) throw notFound('Không tìm thấy liệu trình phù hợp!');
-    const expectedDateValue = expectedEndDate || null;
-    await requestFor(transaction).input('id', dbTypes.Char(10), id)
-      .input('purchaseDate', dbTypes.Date, purchaseDate)
-      .input('startDate', dbTypes.Date, startDate)
-      .input('expectedEndDate', dbTypes.Date, expectedDateValue)
-      .input('paymentStatus', dbTypes.NVarChar(50), paymentStatus)
-      .query("UPDATE dbo.DonMuaDV SET ngayMua=@purchaseDate,ngayBatDau=@startDate,ngayKetThucDuKien=@expectedEndDate, " +
-        "trangThaiThanhToan=@paymentStatus WHERE maDonMua=@id");
-    const after = { ...before, purchaseDate, startDate, expectedEndDate: expectedDateValue, paymentStatus };
-    await insertAudit({ transaction, user, action: 'Cập nhật thông tin liệu trình', entity: 'DonMuaDV', entityId: id, before, after });
-    return { id: String(id).trim(), purchaseDate, startDate, expectedEndDate: expectedDateValue, paymentStatus, message: 'Cập nhật thành công' };
+    const request=requestFor(transaction).input('id',dbTypes.Char(10),id);
+    const updates=[];
+    if(paymentStatus!==undefined){request.input('payment',dbTypes.NVarChar(50),paymentStatus);updates.push('trangThaiThanhToan=@payment');}
+    if(note!==undefined){request.input('note',dbTypes.NVarChar(255),note);updates.push('ghiChu=@note');}
+    if(summaryFile!==undefined){request.input('file',dbTypes.NVarChar(255),summaryFile||null);updates.push('fileTongHop=@file');}
+    const row=(await request.query(`UPDATE dbo.DonMuaDV SET ${updates.join(',')} WHERE maDonMua=@id RETURNING maDonMua AS id,ngayMua AS purchaseDate,trangThaiThanhToan AS paymentStatus,ghiChu AS note,fileTongHop AS summaryFile`)).recordset[0];
+    if(!row)throw notFound('Không tìm thấy liệu trình phù hợp!');
+    await insertAudit({ transaction, user, action: 'Cập nhật thông tin liệu trình', entity: 'DonMuaDV', entityId: id, before:null, after:row });
+    return {...row,id:String(row.id).trim(),message:'Cập nhật thành công'};
   });
 }
 
 export async function getServicePackage(id) {
   const head=(await getPool().request().input('id',dbTypes.Char(10),id).query(`SELECT d.maDonMua AS id,d.maKhachHang AS customerId,k.hoTen AS customerName,
-    k.soDienThoai AS customerPhone,d.maDichVu AS serviceId,s.tenDV AS serviceName,d.ngayMua AS purchaseDate,d.ngayBatDau AS startDate,d.ngayKetThucDuKien AS expectedEndDate,
+    k.soDienThoai AS customerPhone,d.maDichVu AS serviceId,s.tenDV AS serviceName,d.ngayMua AS purchaseDate,
     s.giaDV AS purchasePrice,d.trangThaiThanhToan AS paymentStatus,d.trangThaiHoanThanh AS completionStatus,d.soBuoiDaThucHien AS sessionsCompleted,
     s.tongSoBuoi AS totalSessions,d.fileTongHop AS summaryFile,d.ghiChu AS note
     FROM dbo.DonMuaDV d JOIN dbo.KhachHang k ON k.maKhachHang=d.maKhachHang JOIN dbo.DichVu s ON s.maDichVu=d.maDichVu WHERE d.maDonMua=@id`)).recordset[0];
@@ -334,24 +320,41 @@ export async function completePackageSession(packageId,sessionId,body,user) {
 
 export async function updatePackageSessionResult(packageId,sessionId,body,user) {
   if(!body||typeof body!=='object'||Array.isArray(body))body={};
-  const hasResult=Object.hasOwn(body,'result')||Object.hasOwn(body,'ketQua');
-  const hasImage=Object.hasOwn(body,'image')||Object.hasOwn(body,'hinhAnh');
-  if(!hasResult&&!hasImage)throw badRequest('Không có dữ liệu cần cập nhật.');
-  const result=String(body.result??body.ketQua??'').trim();
-  const image=body.image??body.hinhAnh??null;
-  if(hasResult&&result.length>255)throw badRequest('Kết quả buổi không được vượt quá 255 ký tự.',[{field:'result',message:'Tối đa 255 ký tự'}]);
-  if(hasImage&&image!==null&&(typeof image!=='string'||image.length>255))throw badRequest('Đường dẫn ảnh không hợp lệ.',[{field:'image',message:'Đường dẫn ảnh tối đa 255 ký tự'}]);
+  const aliases={performedAt:['performedAt','ngayThucHien'],result:['result','ketQua'],status:['status','trangThaiThucHien'],customerConfirmation:['customerConfirmation','xacNhanKH'],image:['image','hinhAnh'],note:['note','ghiChu']};
+  const allowed=new Set(Object.values(aliases).flat());
+  const errors=[];
+  for(const field of Object.keys(body))if(!allowed.has(field))errors.push({field,message:'Trường này không được phép chỉnh sửa.'});
+  const has=(key)=>aliases[key].some(field=>Object.hasOwn(body,field));
+  const value=(key)=>{const field=aliases[key].find(name=>Object.hasOwn(body,name));return field?body[field]:undefined;};
+  if(!Object.keys(body).length)errors.push({field:'body',message:'Chọn ít nhất một thông tin cần cập nhật.'});
+  const performedAt=value('performedAt');
+  if(has('performedAt')&&performedAt!=null&&(!String(performedAt).trim()||Number.isNaN(new Date(performedAt).valueOf())))errors.push({field:'performedAt',message:'Ngày thực hiện không hợp lệ.'});
+  const result=has('result')&&value('result')!=null?String(value('result')).trim():null;
+  if(has('result')&&result?.length>255)errors.push({field:'result',message:'Kết quả tối đa 255 ký tự.'});
+  const status=value('status');
+  if(has('status')&&!['Chưa thực hiện','Đang thực hiện','Chờ xác nhận','Đã hoàn thành'].includes(status))errors.push({field:'status',message:'Trạng thái thực hiện không hợp lệ.'});
+  const customerConfirmation=value('customerConfirmation');
+  if(has('customerConfirmation')&&!['Chưa xác nhận','Đã xác nhận'].includes(customerConfirmation))errors.push({field:'customerConfirmation',message:'Trạng thái xác nhận khách hàng không hợp lệ.'});
+  const image=value('image');
+  if(has('image')&&image!=null&&(typeof image!=='string'||image.length>255))errors.push({field:'image',message:'Đường dẫn ảnh tối đa 255 ký tự.'});
+  const note=value('note');
+  if(has('note')&&note!=null&&(typeof note!=='string'||note.length>255))errors.push({field:'note',message:'Ghi chú tối đa 255 ký tự.'});
+  if(errors.length)throw badRequest('Thông tin buổi dịch vụ chưa hợp lệ.',errors);
   return inTransaction(async transaction=>{
     const row=await packageAndSession(transaction,packageId,sessionId);
     const request=requestFor(transaction).input('id',dbTypes.Char(10),sessionId).input('package',dbTypes.Char(10),packageId);
     const assignments=[];
-    if(hasResult){request.input('result',dbTypes.NVarChar(255),result||null);assignments.push('ketQua=@result');}
-    if(hasImage){request.input('image',dbTypes.NVarChar(255),image);assignments.push('hinhAnh=@image');}
-    await request.query(`UPDATE dbo.CT_DonMua SET ${assignments.join(',')} WHERE maCT_DonMua=@id AND maDonMua=@package`);
+    if(has('performedAt')){request.input('performedAt',dbTypes.DateTime2,performedAt);assignments.push('ngayThucHien=@performedAt');}
+    if(has('result')){request.input('result',dbTypes.NVarChar(255),result);assignments.push('ketQua=@result');}
+    if(has('status')){request.input('status',dbTypes.NVarChar(50),status);assignments.push('trangThaiThucHien=@status');}
+    if(has('customerConfirmation')){request.input('confirmation',dbTypes.NVarChar(50),customerConfirmation);assignments.push('xacNhanKH=@confirmation');}
+    if(has('image')){request.input('image',dbTypes.NVarChar(255),image);assignments.push('hinhAnh=@image');}
+    if(has('note')){request.input('note',dbTypes.NVarChar(255),note);assignments.push('ghiChu=@note');}
+    const updated=(await request.query(`UPDATE dbo.CT_DonMua SET ${assignments.join(',')} WHERE maCT_DonMua=@id AND maDonMua=@package RETURNING maCT_DonMua AS id,ngayThucHien AS performedAt,ketQua AS result,trangThaiThucHien AS status,xacNhanKH AS customerConfirmation,hinhAnh AS image,ghiChu AS note`)).recordset[0];
+    if(!updated)throw notFound('Không tìm thấy buổi dịch vụ phù hợp!');
     await insertAudit({transaction,user,action:'Cập nhật kết quả buổi dịch vụ',entity:'CT_DonMua',entityId:sessionId,
-      before:{...(hasResult?{ketQua:row.ketQua??null}:{}),...(hasImage?{hinhAnh:row.image??null}:{})},
-      after:{...(hasResult?{ketQua:result||null}:{}),...(hasImage?{hinhAnh:image}:{})}});
-    return {packageId:packageId.trim(),sessionId:sessionId.trim(),...(hasResult?{result}:{}),...(hasImage?{image}:{}),message:'Đã lưu dữ liệu buổi dịch vụ'};
+      before:row,after:updated});
+    return {packageId:packageId.trim(),...updated,id:updated.id.trim(),message:'Cập nhật buổi dịch vụ thành công'};
   });
 }
 
@@ -395,7 +398,7 @@ export const confirmPackageSession = markCustomerConfirmed;
 
 export async function listRetailCosmetics(query={}) {
   const result=await getPool().request().query(`SELECT maMyPham AS id,tenMyPham AS name,donViTinh AS unit,giaBan AS price,soLuongTonKho AS stock
-    FROM dbo.MyPham WHERE phanLoai=N'Bán lẻ' ORDER BY tenMyPham`);
+    FROM dbo.MyPham WHERE phanLoai=N'Bán lẻ' AND soLuongTonKho>0 ORDER BY tenMyPham`);
   const rows=result.recordset.map(x=>({...x,id:x.id.trim(),price:Number(x.price),stock:Number(x.stock)}));
   const keyword=normalizeVietnamese(query.keyword||'');
   return paginate(keyword?rows.filter(x=>normalizeVietnamese(`${x.id} ${x.name}`).includes(keyword)):rows,query.page,query.limit);
@@ -403,66 +406,36 @@ export async function listRetailCosmetics(query={}) {
 
 export async function createRetailSale(customerId,body,user) {
   if(!body||typeof body!=='object'||Array.isArray(body))body={};
-  const items=body.items;
-  const errors=[];const prepared=[];const seen=new Set();
-  if(!Array.isArray(items)||!items.length)errors.push({field:'items',message:'Vui lòng chọn ít nhất một sản phẩm'});
-  for(const [index,item] of (items||[]).entries()) {
-    if(!item||typeof item!=='object'||Array.isArray(item)) {
-      errors.push({field:`items.${index}`,message:'Dòng sản phẩm không hợp lệ'});
-      continue;
-    }
-    const productId=String(item.cosmeticId??item.maMyPham??'').trim();const count=quantity(item.quantity??item.soLuong);
-    if(!productId)errors.push({field:`items.${index}.cosmeticId`,message:'Vui lòng chọn sản phẩm'});
-    if(count===null)errors.push({field:`items.${index}.quantity`,message:'Giá trị nhập không hợp lệ.'});
-    if(seen.has(productId))errors.push({field:`items.${index}.cosmeticId`,message:'Sản phẩm đã được chọn!'});
-    seen.add(productId);prepared.push({productId,count});
+  const dateErrors=[];
+  const saleDate=parseDate(body.soldAt??body.ngayMua??todayVn(),'soldAt',dateErrors,'Ngày mua');
+  if(dateErrors.length)throw badRequest('Ngày mua không hợp lệ.',dateErrors);
+  const source=body.items;
+  const errors=[];const items=[];const seen=new Set();
+  if(!Array.isArray(source)||!source.length)errors.push({field:'items',message:'Vui lòng chọn ít nhất một sản phẩm'});
+  for(const [index,item] of (source||[]).entries()) {
+    const productId=String(item?.mamypham??item?.cosmeticId??item?.maMyPham??'').trim();
+    const count=positiveInteger(item?.soluong??item?.quantity??item?.soLuong);
+    if(!productId)errors.push({field:`items.${index}.mamypham`,message:'Vui lòng chọn sản phẩm'});
+    if(count===null)errors.push({field:`items.${index}.soluong`,message:'Số lượng phải là số nguyên từ 1 trở lên.'});
+    if(seen.has(productId))errors.push({field:`items.${index}.mamypham`,message:'Sản phẩm đã được chọn!'});
+    seen.add(productId);items.push({mamypham:productId,soluong:count});
   }
   if(errors.length)throw badRequest('Thông tin bán lẻ chưa hợp lệ.',errors);
-  const soldAtValue=body.soldAt??body.purchaseDate;
-  const soldAt=soldAtValue?new Date(soldAtValue):new Date();
-  if(Number.isNaN(soldAt.valueOf()))throw badRequest('Ngày mua sản phẩm không hợp lệ.',[{field:'soldAt',message:'Ngày mua sản phẩm không hợp lệ'}]);
   return inTransaction(async transaction=>{
-    await findCustomer(customerId,transaction);
-    const plans=[];let total=0;
-    for(const item of prepared) {
-      const product=(await requestFor(transaction).input('id',dbTypes.Char(10),item.productId).query(`SELECT maMyPham AS "maMyPham",tenMyPham AS "tenMyPham",donViTinh AS "donViTinh",giaBan AS "giaBan",soLuongTonKho AS "soLuongTonKho" FROM dbo.MyPham WITH (UPDLOCK,HOLDLOCK)
-        WHERE maMyPham=@id AND phanLoai=N'Bán lẻ'`)).recordset[0];
-      if(!product)throw notFound('Không tìm thấy sản phẩm phù hợp!');
-      if(item.count>Number(product.soLuongTonKho))throw badRequest('Giá trị nhập không hợp lệ.',[{field:'items.quantity',message:'Giá trị nhập không hợp lệ.'}]);
-      const price=Number(product.giaBan);const lineTotal=price*item.count;total+=lineTotal;
-      const batches=(await requestFor(transaction).input('product',dbTypes.Char(10),item.productId).query(`SELECT maLo AS "maLo",soLuongTonLo AS "soLuongTonLo",hanSuDung AS "hanSuDung" FROM dbo.LoHang WITH (UPDLOCK,HOLDLOCK)
-        WHERE maMyPham=@product AND soLuongTonLo>0 AND hanSuDung>=CONVERT(date,GETDATE()) ORDER BY hanSuDung ASC,maLo ASC`)).recordset;
-      const available=batches.reduce((sum,row)=>sum+Number(row.soLuongTonLo),0);
-      if(available<item.count)throw badRequest('Giá trị nhập không hợp lệ.',[{field:'items.quantity',message:'Giá trị nhập không hợp lệ.'}]);
-      let remaining=item.count;const allocation=[];
-      for(const batch of batches) {
-        if(!remaining)break;
-        const take=Math.min(remaining,Number(batch.soLuongTonLo));allocation.push({batchId:batch.maLo.trim(),quantity:take});remaining-=take;
-      }
-      plans.push({productId:item.productId,productName:product.tenMyPham,unit:product.donViTinh,price,quantity:item.count,lineTotal,allocation});
+    const customer=await findCustomer(customerId,transaction);
+    await setSupabaseAuthContext(transaction,user);
+    let saleId;
+    try {
+      saleId=(await requestFor(transaction).input('customer',dbTypes.VarChar(10),customerId).input('items',dbTypes.VarChar,JSON.stringify(items))
+        .query('SELECT public.fn_ghi_nhan_ban(@customer,@items::jsonb) AS id')).recordset[0]?.id;
+    } catch(rpcError) {
+      console.error('Lỗi fn_ghi_nhan_ban:',rpcError);
+      throw error(422,'RETAIL_SALE_RPC_FAILED',rpcError.message);
     }
-    const saleId=await nextCode('PNB',transaction);
-    await requestFor(transaction).input('id',dbTypes.Char(10),saleId).input('date',dbTypes.DateTime2,soldAt).input('total',dbTypes.Money,total)
-      .input('account',dbTypes.Char(10),user.id).input('customer',dbTypes.Char(10),customerId)
-      .query('INSERT INTO dbo.DonGhiNhanBan(maDon,ngayMua,tongTien,maTK,maKhachHang) VALUES(@id,@date,@total,@account,@customer)');
-    for(const plan of plans) {
-      for(const allocation of plan.allocation) {
-        const lineId=await nextCode('CB',transaction);const amount=plan.price*allocation.quantity;
-        const update=await requestFor(transaction).input('lot',dbTypes.Char(10),allocation.batchId).input('quantity',dbTypes.Int,allocation.quantity)
-          .query('UPDATE dbo.LoHang SET soLuongTonLo=soLuongTonLo-@quantity WHERE maLo=@lot AND soLuongTonLo>=@quantity');
-        if(update.rowsAffected?.[0]!==1)throw error(409,'STOCK_CHANGED','Số lượng tồn kho vừa thay đổi, vui lòng tải lại.');
-        await requestFor(transaction).input('line',dbTypes.Char(10),lineId).input('quantity',dbTypes.Int,allocation.quantity).input('price',dbTypes.Money,plan.price)
-          .input('amount',dbTypes.Money,amount).input('sale',dbTypes.Char(10),saleId).input('lot',dbTypes.Char(10),allocation.batchId)
-          .query('INSERT INTO dbo.CT_DonGhiNhanBan(maCT_Don,soLuong,donGia,thanhTien,maDon,maLo) VALUES(@line,@quantity,@price,@amount,@sale,@lot)');
-      }
-      const stock=(await requestFor(transaction).input('id',dbTypes.Char(10),plan.productId).input('quantity',dbTypes.Int,plan.quantity)
-        .query('UPDATE dbo.MyPham SET soLuongTonKho=soLuongTonKho-@quantity WHERE maMyPham=@id AND soLuongTonKho>=@quantity RETURNING soLuongTonKho AS stock')).recordset[0];
-      if(!stock)throw error(409,'STOCK_CHANGED','Số lượng tồn kho vừa thay đổi, vui lòng tải lại.');
-      await updateStockAlerts(transaction,user,plan.productId,Number(stock.stock));
-    }
-    await insertAudit({transaction,user,action:'Ghi nhận sản phẩm mua thêm',entity:'DonGhiNhanBan',entityId:saleId,before:null,
-      after:{maKhachHang:customerId,ngayMua:soldAt,tongTien:total,items:plans}});
-    return {id:saleId.trim(),customerId:customerId.trim(),soldAt,total,items:plans,message:'Ghi nhận thành công!'};
+    if(!saleId)throw error(500,'RETAIL_SALE_RPC_EMPTY','Hàm ghi nhận bán không trả về mã đơn.');
+    await requestFor(transaction).input('saleId',dbTypes.Char(10),saleId).input('saleDate',dbTypes.Date,saleDate)
+      .query('UPDATE dbo.DonGhiNhanBan SET ngayMua=@saleDate WHERE maDon=@saleId');
+    return {id:String(saleId).trim(),customerId:customer.id,message:'Ghi nhận bán lẻ thành công'};
   });
 }
 

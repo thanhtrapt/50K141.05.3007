@@ -747,6 +747,19 @@ body:has(.customer-service-session-modal) {
 .customer-active-service-simulation { display:flex; align-items:center; justify-content:flex-end; gap:9px; margin:-4px 0 14px; }
 .customer-active-service-simulation > span { color:var(--color-muted); font-size:11px; }
 .customer-active-service-simulation__button { border-style:dashed; }
+.customer-service-session-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+  margin-bottom: 18px;
+}
+.customer-service-session-edit-grid__wide { grid-column: 1 / -1; }
+.customer-service-session-edit-grid textarea.field__control { min-height: 84px; resize: vertical; }
+.customer-service-session-edit-grid [aria-invalid="true"] { border-color: #df5a50; }
+@media (max-width: 600px) {
+  .customer-service-session-edit-grid { grid-template-columns: minmax(0, 1fr); }
+  .customer-service-session-edit-grid__wide { grid-column: auto; }
+}
 @media (max-width:700px) {
   .customer-active-service-summary__actions { flex-wrap:wrap; }
   .customer-active-service-summary__header { flex-direction:column; }

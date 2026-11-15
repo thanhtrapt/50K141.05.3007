@@ -18,6 +18,10 @@ import ProductFormPage from './ProductFormPage.jsx';
 
 const basePath = '/my-pham';
 const productCategories = ['Bán lẻ', 'Dùng cho liệu trình'];
+const formatDate = (value) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value ?? ''));
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value ?? '');
+};
 
 export default function ProductsPage() {
   const [items, setItems] = useState([]);
@@ -54,7 +58,20 @@ export default function ProductsPage() {
     setSelectedDetail(null);
     if (!productId) return () => { active = false; };
     apiRequest(`/api/cosmetics/${encodeURIComponent(productId)}`)
-      .then((product) => { if (active) setSelectedDetail({ ...product, price: Number(product.salePrice), stock: Number(product.stock) }); })
+      .then((product) => {
+        if (!active) return;
+        setSelectedDetail({
+          ...product,
+          price: Number(product.salePrice),
+          stock: Number(product.stock),
+          lots: (product.batches ?? []).map((batch) => ({
+            lot: batch.id,
+            made: formatDate(batch.productionDate),
+            expiry: formatDate(batch.expiryDate),
+            stock: Number(batch.stock),
+          })),
+        });
+      })
       .catch((error) => { if (active) setLoadError(error.message); });
     return () => { active = false; };
   }, [productId]);

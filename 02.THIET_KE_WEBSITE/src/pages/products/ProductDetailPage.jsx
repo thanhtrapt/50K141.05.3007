@@ -7,14 +7,7 @@ import { formatCurrency } from '../../data/mockData.js';
 
 export default function ProductDetailPage({ product, onBack, onEdit, onDelete, fallbackPath = '/my-pham' }) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  // Mã lô dự phòng theo đúng định dạng ddMMyy-NNN (10 ký tự) khi sản phẩm chưa có lô.
-  const lotSuffix = String(product.id).replace(/\D/g, '').slice(-3).padStart(3, '0');
-  const lots = product.lots ?? [{
-    lot: `150526-${lotSuffix}`,
-    made: '15/05/2026',
-    expiry: '15/05/2027',
-    stock: product.stock,
-  }];
+  const lots = product.lots ?? [];
 
   return (
     <div className="page-stack product-detail-page">

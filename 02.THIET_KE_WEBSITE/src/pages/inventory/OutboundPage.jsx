@@ -86,11 +86,19 @@ export default function OutboundPage() {
         method: 'POST',
         body: { issueDate: form.date, items: form.lines.map((line) => ({ cosmeticId: line.product, batchId: line.lot, quantity: Number(line.quantity) })) },
       });
-      const rows = await apiList('/api/stock-issues');
-      const refreshed = rows.map((item) => ({ ...item, date: formatDate(String(item.issueDate).slice(0, 10)), customer: item.creator, total: 0 }));
-      setRecords(refreshed);
+      const [rowsResult, cosmeticsResult, lotsResult] = await Promise.allSettled([
+        apiList('/api/stock-issues'),
+        apiList('/api/cosmetics'),
+        apiList('/api/lots'),
+      ]);
+      const refreshed = rowsResult.status === 'fulfilled'
+        ? rowsResult.value.map((item) => ({ ...item, date: formatDate(String(item.issueDate).slice(0, 10)), customer: item.creator, total: 0 }))
+        : records;
+      if (rowsResult.status === 'fulfilled') setRecords(refreshed);
+      if (cosmeticsResult.status === 'fulfilled') setProducts(cosmeticsResult.value.filter((item) => item.category === 'Dùng cho liệu trình'));
+      if (lotsResult.status === 'fulfilled') setLotCatalog(lotsResult.value.map((lot) => ({ id: lot.id, productId: lot.cosmeticId, expiry: String(lot.expiryDate).slice(0, 10), stock: Number(lot.stock) })));
       setMode('list');
-      const createdRecord = refreshed.find((item) => item.id === created.id);
+      const createdRecord = refreshed.find((item) => item.id === created.id) ?? { id: created.id, issueDate: form.date, creator: form.recipient };
       if (createdRecord) await openDetail(createdRecord);
       showDialog({ tone: 'success', title: 'Tạo phiếu xuất thành công', message: 'Phiếu xuất và số lượng tồn kho đã được cập nhật trong SQL.' });
     } catch (error) {
