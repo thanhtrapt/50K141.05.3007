@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import RouteGuard from './auth/RouteGuard.jsx';
+import { FeedbackProvider } from './components/ui/FeedbackContext.jsx';
 import AppShell from './components/layout/AppShell.jsx';
 import AppointmentsPage from './pages/appointments/AppointmentsPage.jsx';
 import LoginPage from './pages/auth/LoginPage.jsx';
@@ -16,6 +17,7 @@ import ServicesPage from './pages/services/ServicesPage.jsx';
 
 export default function App() {
   return (
+    <FeedbackProvider>
     <Routes>
       <Route path="/dang-nhap" element={<LoginPage />} />
       <Route element={<RouteGuard><AppShell /></RouteGuard>}>
@@ -46,5 +48,6 @@ export default function App() {
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
+    </FeedbackProvider>
   );
 }

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -13,6 +12,7 @@ import {
 import Button from '../../components/ui/Button.jsx';
 import DataTable from '../../components/ui/DataTable.jsx';
 import Modal from '../../components/ui/Modal.jsx';
+import FeedbackDialog from '../../components/ui/FeedbackDialog.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import StatusBadge from '../../components/ui/StatusBadge.jsx';
 import TreatmentReportModal from '../../components/reports/TreatmentReportModal.jsx';
@@ -123,12 +123,13 @@ function compressImage(file) {
   });
 }
 
-export default function CustomerActiveServicePage({ customer, onBack }) {
+export default function CustomerActiveServicePage({ customer, onBack, fallbackPath }) {
   const [usage, setUsage] = useState(() => loadUsage(customer));
   const [selectedSessionNumber, setSelectedSessionNumber] = useState(null);
   const [lightbox, setLightbox] = useState(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [startErrorOpen, setStartErrorOpen] = useState(false);
+  const [resultMissingOpen, setResultMissingOpen] = useState(false);
   const [resultDraft, setResultDraft] = useState('');
   const [editingResult, setEditingResult] = useState(false);
   const [notice, setNotice] = useState('');
@@ -190,8 +191,10 @@ export default function CustomerActiveServicePage({ customer, onBack }) {
 
   const completeSession = () => {
     if (!selectedSession) return;
+    if (!resultDraft.trim()) { setResultMissingOpen(true); return; }
     updateSession(selectedSession.number, {
       status: 'Đã hoàn thành',
+      result: resultDraft.trim(),
       date: selectedSession.date === '--' ? dateLabel() : selectedSession.date,
     });
   };
@@ -313,7 +316,8 @@ export default function CustomerActiveServicePage({ customer, onBack }) {
     <div className="page-stack customer-active-service-page">
       <PageHeader
         title={usage.name}
-        actions={<Button variant="secondary" onClick={onBack}><ArrowLeft size={17} />Quay lại hồ sơ khách hàng</Button>}
+        fallbackPath={fallbackPath || `/khach-hang/${customer.id}`}
+        onBack={onBack}
       />
 
       <section className="panel customer-active-service-summary">
@@ -362,8 +366,8 @@ export default function CustomerActiveServicePage({ customer, onBack }) {
           columns={[
             { key: 'number', label: 'STT', width: '10%', align: 'center' },
             { key: 'name', label: 'Tên buổi', width: '32%', render: (session) => <button type="button" className="customer-active-service-sessions__link" onClick={() => openSession(session)}>Buổi {session.number}</button> },
-            { key: 'status', label: 'Trạng thái buổi', width: '30%', align: 'center', render: (session) => <StatusBadge tone={statusTone(session.status)}>{session.status}</StatusBadge> },
-            { key: 'date', label: 'Ngày thực hiện', width: '28%', align: 'center' },
+            { key: 'status', label: 'Trạng thái buổi', width: '28%', align: 'center', render: (session) => <StatusBadge tone={statusTone(session.status)}>{session.status}</StatusBadge> },
+            { key: 'date', label: 'Ngày thực hiện', width: '30%', align: 'center' },
           ]}
         />
       </section>
@@ -402,8 +406,8 @@ export default function CustomerActiveServicePage({ customer, onBack }) {
               <h3>Sản phẩm sử dụng</h3>
               <div className="table-scroll" role="region" aria-label="Sản phẩm sử dụng trong buổi" tabIndex={0}>
                 <table className="data-table customer-service-session-detail__products">
-                  <thead><tr><th scope="col">STT</th><th scope="col">Tên mỹ phẩm</th><th scope="col">Định lượng sử dụng</th></tr></thead>
-                  <tbody>{selectedSession.products.map((product, index) => <tr key={`${product.name}-${index}`}><td>{index + 1}</td><td>{product.name}</td><td>{product.amount}</td></tr>)}</tbody>
+                  <thead><tr><th scope="col" style={{ width: '15%', textAlign: 'center' }}>STT</th><th scope="col" style={{ width: '55%' }}>Tên mỹ phẩm</th><th scope="col" style={{ width: '30%', textAlign: 'center' }}>Định lượng sử dụng</th></tr></thead>
+                  <tbody>{selectedSession.products.map((product, index) => <tr key={`${product.name}-${index}`}><td className="data-table__cell--center">{index + 1}</td><td>{product.name}</td><td className="data-table__cell--center">{product.amount}</td></tr>)}</tbody>
                 </table>
               </div>
             </section>
@@ -437,13 +441,8 @@ export default function CustomerActiveServicePage({ customer, onBack }) {
         </div>}
       </Modal>
 
-      <Modal open={startErrorOpen} title="" onClose={() => setStartErrorOpen(false)} size="small" layer={2} className="customer-service-session-error" hideHeader hideClose ariaLabel="Không thể bắt đầu buổi">
-        <div className="customer-service-session-error__content">
-          <span><CircleAlert size={32} /></span>
-          <p>Vui lòng hoàn thành buổi trước theo đúng thứ tự !</p>
-          <Button onClick={() => setStartErrorOpen(false)}>Đóng</Button>
-        </div>
-      </Modal>
+      <FeedbackDialog open={startErrorOpen} title="" message="Vui lòng hoàn thành buổi trước theo đúng thứ tự !" onClose={() => setStartErrorOpen(false)} layer={2} />
+      <FeedbackDialog open={resultMissingOpen} title="" message="Vui lòng nhập kết quả buổi !" onClose={() => setResultMissingOpen(false)} layer={2} />
 
       <Modal
         open={Boolean(lightbox && activeLightboxImage)}

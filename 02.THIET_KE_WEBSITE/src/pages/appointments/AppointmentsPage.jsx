@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, NotebookPen, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, NotebookPen, Plus, X } from 'lucide-react';
 import Button from '../../components/ui/Button.jsx';
 import Modal from '../../components/ui/Modal.jsx';
+import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
+import FeedbackDialog from '../../components/ui/FeedbackDialog.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import PageListToolbar from '../../components/ui/PageListToolbar.jsx';
 import SearchBox from '../../components/ui/SearchBox.jsx';
 import SelectField from '../../components/ui/SelectField.jsx';
 import TextField from '../../components/ui/TextField.jsx';
+import { ActionGroup, DeleteButton, EditButton } from '../../components/ui/ActionButtons.jsx';
 import { apiRequest } from '../../api.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
+import { useFeedback } from '../../components/ui/FeedbackContext.jsx';
 
 const halfHourLabels = Array.from({ length: 25 }, (_, index) => {
   const totalMinutes = 8 * 60 + index * 30;
@@ -59,7 +63,6 @@ export default function AppointmentsPage() {
   const [weekShift, setWeekShift] = useState(0);
   const [today, setToday] = useState(todayInVietnam);
   const [loadError, setLoadError] = useState('');
-  const [toast, setToast] = useState('');
   const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -67,10 +70,15 @@ export default function AppointmentsPage() {
   const [noteEditorOpen, setNoteEditorOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
   const [appointmentForm, setAppointmentForm] = useState(emptyAppointment);
+  const [appointmentValidation, setAppointmentValidation] = useState(null);
   const [services, setServices] = useState([]);
   const [servicesError, setServicesError] = useState('');
   const [viewMode, setViewMode] = useState('Tuần');
   const [selectedAppointment, setSelectedAppointment] = useState(null);
+  const [notFoundOpen, setNotFoundOpen] = useState(false);
+  const [appointmentConflict, setAppointmentConflict] = useState(null);
+  const [businessWarning, setBusinessWarning] = useState('');
+  const { showDialog } = useFeedback();
   const baseMonday = useMemo(() => {
     const monday = mondayOf(today);
     monday.setDate(monday.getDate() + weekShift * 7);
@@ -114,9 +122,14 @@ export default function AppointmentsPage() {
         tone: 'mint',
       })));
       setLoadError('');
-    }).catch((error) => { if (active) { setEvents([]); setLoadError(error.message); } });
+    }).catch((error) => { if (active) { setEvents([]); setLoadError(error.isServerError || error.code === 'NETWORK_ERROR' ? '' : error.message); } });
     return () => { active = false; };
   }, [fromDate, toDate, query, days]);
+
+  useEffect(() => {
+    if (!query.trim()) { setNotFoundOpen(false); return; }
+    if (!loadError && events.length === 0) setNotFoundOpen(true);
+  }, [query, loadError, events]);
 
   useEffect(() => {
     let active = true;
@@ -126,7 +139,7 @@ export default function AppointmentsPage() {
         return { ...service, durationMinutes: Number(item.sessions?.[0]?.durationMinutes) || 60 };
       }));
       if (active) { setServices(detailed); setServicesError(''); }
-    }).catch((error) => { if (active) { setServices([]); setServicesError(error.message); } });
+    }).catch((error) => { if (active) { setServices([]); setServicesError(error.isServerError || error.code === 'NETWORK_ERROR' ? '' : error.message); } });
     return () => { active = false; };
   }, []);
 
@@ -149,23 +162,42 @@ export default function AppointmentsPage() {
     if (!canManageAppointments) return;
     setEditingId(null);
     setAppointmentForm(emptyAppointment);
+    setAppointmentValidation(null);
     setFormOpen(true);
   };
 
   const createAppointment = async (event) => {
     event.preventDefault();
     if (!canManageAppointments) return;
+    if (!appointmentForm.customer.trim() || !appointmentForm.phone.trim() || !appointmentForm.service || !appointmentForm.date || !appointmentForm.start || !appointmentForm.end) {
+      setAppointmentValidation({
+        summary: 'Vui lòng bổ sung thông tin còn thiếu. Lịch hẹn chưa được lưu.',
+        phone: !appointmentForm.phone.trim() ? 'Vui lòng nhập số điện thoại.' : '',
+        service: !appointmentForm.service ? 'Vui lòng chọn dịch vụ.' : '',
+      });
+      return;
+    }
+    setAppointmentValidation(null);
     if (editingId) {
       try {
         await apiRequest(`/api/appointments/${editingId}`, { method: 'PUT', body: { date: appointmentForm.date, startTime: appointmentForm.start, note: appointmentForm.note } });
-        setToast('Cập nhật thông tin thành công!');
-        window.setTimeout(() => setToast(''), 4000);
+        showDialog({ tone: 'success', title: 'Cập nhật thông tin thành công', message: 'Thông tin dịch vụ mới đã được lưu vào hệ thống' });
         const params = new URLSearchParams({ startDate: fromDate, endDate: toDate, limit: '100' });
         if (query.trim()) params.set('keyword', query.trim());
         const refreshed = await apiRequest(`/api/appointments?${params.toString()}`);
         setEvents((refreshed.data ?? []).map((appointment) => ({ id: appointment.id, date: appointment.date, start: appointment.startTime, end: appointment.endTime,
           customer: appointment.customerName ?? '', phone: appointment.customerPhone ?? '', service: appointment.sessionName ?? '', note: appointment.note ?? '', status: appointment.status, tone: 'mint' })));
-      } catch (error) { setLoadError(error.message); return; }
+      } catch (error) {
+        if (error.code === 'CUSTOMER_BLACKLISTED') setBusinessWarning(error.fieldErrors?.[0]?.message || 'Vui lòng cân nhắc trước khi lưu; bạn vẫn có thể tạo lịch hẹn.');
+        else if (error.code === 'APPOINTMENT_CONFLICT' || error.code === 'SESSION_ALREADY_SCHEDULED') {
+          const detail = error.fieldErrors?.find((item) => item.field === 'startTime');
+          setAppointmentConflict({ message: detail?.message || 'Giờ hẹn bị trùng lịch với lịch khác', suggestions: detail?.suggestions || [] });
+        }
+        else if (error.status === 409) showDialog({ title: 'Không thể điều chỉnh lịch hẹn', message: error.message });
+        else if (error.isServerError || error.code === 'NETWORK_ERROR') return;
+        else showDialog({ title: 'Thông tin không hợp lệ', message: error.message || 'Yêu cầu nhập lại' });
+        return;
+      }
       setEditingId(null);
     } else {
       try {
@@ -176,11 +208,22 @@ export default function AppointmentsPage() {
           startTime: appointmentForm.start,
           note: appointmentForm.note,
         } });
+        showDialog({ tone: 'success', title: 'Tạo lịch hẹn thành công', message: 'Thông tin lịch hẹn đã được lưu vào hệ thống.', size: 'medium', wideButton: true });
         const params = new URLSearchParams({ startDate: fromDate, endDate: toDate, limit: '100' });
         const refreshed = await apiRequest(`/api/appointments?${params.toString()}`);
         setEvents((refreshed.data ?? []).map((appointment) => ({ id: appointment.id, date: appointment.date, start: appointment.startTime, end: appointment.endTime,
           customer: appointment.customerName ?? '', phone: appointment.customerPhone ?? '', service: appointment.sessionName ?? '', note: appointment.note ?? '', status: appointment.status, tone: 'mint' })));
-      } catch (error) { setLoadError(error.message); return; }
+      } catch (error) {
+        if (error.code === 'CUSTOMER_BLACKLISTED') setBusinessWarning(error.fieldErrors?.[0]?.message || 'Vui lòng cân nhắc trước khi lưu; bạn vẫn có thể tạo lịch hẹn.');
+        else if (error.code === 'APPOINTMENT_CONFLICT' || error.code === 'SESSION_ALREADY_SCHEDULED') {
+          const detail = error.fieldErrors?.find((item) => item.field === 'startTime');
+          setAppointmentConflict({ message: detail?.message || 'Giờ hẹn bị trùng lịch với lịch khác', suggestions: detail?.suggestions || [] });
+        }
+        else if (error.status === 409) showDialog({ title: 'Không thể tạo lịch hẹn', message: error.message });
+        else if (error.isServerError || error.code === 'NETWORK_ERROR') return;
+        else showDialog({ title: 'Thông tin không hợp lệ', message: error.message || 'Yêu cầu nhập lại' });
+        return;
+      }
     }
     setFormOpen(false);
     setAppointmentForm(emptyAppointment);
@@ -245,6 +288,11 @@ export default function AppointmentsPage() {
       {!loadError && visibleEvents.length === 0 && <p className="appointment-empty">{query.trim() ? 'Không tìm thấy lịch hẹn phù hợp!' : 'Không có lịch hẹn trong tuần này.'}</p>}
       </section>
 
+      <FeedbackDialog open={notFoundOpen} tone="empty" message="Không tìm thấy lịch hẹn phù hợp!" onClose={() => setNotFoundOpen(false)} />
+      <FeedbackDialog open={Boolean(appointmentConflict)} title="Giờ hẹn bị trùng lịch với lịch khác" message={appointmentConflict?.message} closeVariant="secondary" onClose={() => setAppointmentConflict(null)}>
+        {appointmentConflict?.suggestions?.length > 0 && <div className="appointment-conflict-slots"><strong>Giờ trống</strong>{appointmentConflict.suggestions.map((slot) => <button type="button" key={`${slot.startTime}-${slot.endTime}`} onClick={() => { setAppointmentForm((current) => ({ ...current, start: slot.startTime, end: slot.endTime })); setAppointmentConflict(null); }}>{slot.startTime} – {slot.endTime}</button>)}</div>}
+      </FeedbackDialog>
+
       <Modal open={Boolean(selectedAppointment)} title="CHI TIẾT LỊCH HẸN" onClose={() => setSelectedAppointment(null)} size="large">
         {selectedAppointment && <div className="appointment-detail-panel" aria-labelledby="appointment-detail-title">
         <header className="appointment-detail-panel__header">
@@ -261,10 +309,10 @@ export default function AppointmentsPage() {
             <span>{selectedAppointment.start}–{selectedAppointment.end} · {selectedAppointmentDuration} phút</span>
           </div>
           {canManageAppointments && (
-            <div className="appointment-detail-panel__actions">
-              <Button variant="secondary" onClick={() => openEdit(selectedAppointment)}><Pencil size={15} />Điều chỉnh lịch hẹn</Button>
-              <Button variant="secondary" className="appointment-detail-panel__delete" onClick={() => setConfirmDeleteOpen(true)}><Trash2 size={15} />Hủy lịch hẹn</Button>
-            </div>
+            <ActionGroup className="appointment-detail-panel__actions">
+              <EditButton onClick={() => openEdit(selectedAppointment)} label="Điều chỉnh lịch hẹn" />
+              <DeleteButton onClick={() => setConfirmDeleteOpen(true)} label="Hủy lịch hẹn" />
+            </ActionGroup>
           )}
         </div>
 
@@ -301,15 +349,17 @@ export default function AppointmentsPage() {
       </Modal>
 
       <Modal open={formOpen} title={editingId ? 'ĐIỀU CHỈNH LỊCH HẸN' : 'TẠO LỊCH HẸN'} onClose={() => setConfirmDiscardOpen(true)} size="large">
-        <form className="form-grid" onSubmit={createAppointment} autoComplete="off">
+        <form className="form-grid" onSubmit={createAppointment} autoComplete="off" noValidate>
           <TextField label="Tên khách hàng *" value={appointmentForm.customer} onChange={(event) => setAppointmentForm({ ...appointmentForm, customer: event.target.value })} autoComplete="off" readOnly={Boolean(editingId)} required />
-          <TextField label="Số điện thoại *" type="tel" value={appointmentForm.phone} onChange={(event) => setAppointmentForm({ ...appointmentForm, phone: event.target.value })} autoComplete="off" readOnly={Boolean(editingId)} required />
-          <SelectField label="Dịch vụ *" value={appointmentForm.service} onChange={(event) => setAppointmentForm((current) => ({ ...current, service: event.target.value, end: appointmentEndTime(services, event.target.value, current.start) }))} options={[{ value: '', label: services.length ? 'Chọn dịch vụ' : 'Chưa có dịch vụ' }, ...services.map((service) => service.name)]} disabled={Boolean(editingId) || services.length === 0} required />
+          <TextField label="Số điện thoại *" type="tel" value={appointmentForm.phone} onChange={(event) => { setAppointmentForm({ ...appointmentForm, phone: event.target.value }); setBusinessWarning(''); setAppointmentValidation((current) => current ? { ...current, phone: '', summary: '' } : current); }} autoComplete="off" readOnly={Boolean(editingId)} error={appointmentValidation?.phone} required />
+          <SelectField label="Dịch vụ *" value={appointmentForm.service} onChange={(event) => { setAppointmentForm((current) => ({ ...current, service: event.target.value, end: appointmentEndTime(services, event.target.value, current.start) })); setAppointmentValidation((current) => current ? { ...current, service: '', summary: '' } : current); }} options={[{ value: '', label: services.length ? 'Chọn dịch vụ' : 'Chưa có dịch vụ' }, ...services.map((service) => service.name)]} disabled={Boolean(editingId) || services.length === 0} error={appointmentValidation?.service} required />
           {servicesError && <p className="field__error form-grid__wide" role="alert">{servicesError}</p>}
           <TextField label="Ngày hẹn *" type="date" value={appointmentForm.date} onChange={(event) => setAppointmentForm({ ...appointmentForm, date: event.target.value })} required />
           <TextField label="Giờ hẹn *" type="time" value={appointmentForm.start} onChange={(event) => setAppointmentForm((current) => ({ ...current, start: event.target.value, end: appointmentEndTime(services, current.service, event.target.value) }))} required />
           <TextField label="Giờ kết thúc *" type="time" value={appointmentForm.end} readOnly required />
           <label className="field form-grid__wide"><span className="field__label">Ghi chú</span><textarea className="field__control appointment-form__note" value={appointmentForm.note} onChange={(event) => setAppointmentForm({ ...appointmentForm, note: event.target.value })} /></label>
+          {appointmentValidation?.summary && <div className="appointment-form-validation form-grid__wide" role="alert"><strong>Thông tin chưa đầy đủ!</strong><span>{appointmentValidation.summary}</span></div>}
+          {businessWarning && <div className="appointment-form-validation appointment-form-validation--warning form-grid__wide" role="status"><strong>Khách hàng thuộc danh sách đen</strong><span>{businessWarning}</span></div>}
           <div className="modal-form-actions form-grid__wide">
             <Button variant="secondary" onClick={() => setConfirmDiscardOpen(true)}>Hủy</Button>
             <Button type="submit">Lưu</Button>
@@ -317,25 +367,20 @@ export default function AppointmentsPage() {
         </form>
       </Modal>
 
-      <Modal open={confirmDeleteOpen} title="HỦY LỊCH HẸN" onClose={() => setConfirmDeleteOpen(false)}>
-        <p className="appointment-delete-confirm">Bạn có chắc chắn muốn hủy lịch hẹn của {selectedAppointment?.customer}?</p>
-        <div className="modal-form-actions">
-          <Button variant="secondary" onClick={() => setConfirmDeleteOpen(false)}>Hủy</Button>
-          <Button className="appointment-delete-confirm__button" onClick={async () => {
+      <ConfirmDialog open={confirmDeleteOpen} title="Hủy lịch hẹn" message="Lịch hẹn này sẽ bị hủy. Bạn có chắc chắn muốn hủy?" confirmLabel="Xác nhận" cancelLabel="Quay lại" onCancel={() => setConfirmDeleteOpen(false)} onConfirm={async () => {
             try {
-              await apiRequest(`/api/appointments/${selectedAppointment.id}/cancel`, { method: 'POST', body: { reason: '' } });
+              const cancelled = await apiRequest(`/api/appointments/${selectedAppointment.id}/cancel`, { method: 'POST', body: { reason: '' } });
               setEvents((current) => current.filter((item) => item.id !== selectedAppointment.id));
+              showDialog({ tone: 'success', title: 'Hủy lịch hẹn thành công!', closeVariant: 'secondary', size: 'medium', message: `${selectedAppointment.customer}\n${selectedAppointment.phone || ''}\nSố lần hủy lịch: ${cancelled.cancellationCount} lần (trước đó: ${Math.max(0, Number(cancelled.cancellationCount) - 1)})\nĐã lưu bản ghi hủy vào lịch sử khách hàng.` });
               setSelectedAppointment(null);
               setConfirmDeleteOpen(false);
-            } catch (error) { setLoadError(error.message); setConfirmDeleteOpen(false); }
-          }}>Hủy lịch hẹn</Button>
-        </div>
-      </Modal>
-      <Modal open={confirmDiscardOpen} title="HỦY THAO TÁC ĐIỀU CHỈNH" onClose={() => setConfirmDiscardOpen(false)}>
-        <p className="appointment-delete-confirm">Bạn có chắc chắn muốn hủy thao tác điều chỉnh lịch hẹn?</p>
-        <div className="modal-form-actions"><Button variant="secondary" onClick={() => setConfirmDiscardOpen(false)}>Tiếp tục chỉnh sửa</Button><Button onClick={() => { setConfirmDiscardOpen(false); setFormOpen(false); setEditingId(null); setAppointmentForm(emptyAppointment); }}>Đồng ý hủy</Button></div>
-      </Modal>
-      {toast && <div className="appointment-toast" role="status">{toast}</div>}
+            } catch (error) {
+              if (error.isServerError || error.code === 'NETWORK_ERROR') return;
+              else showDialog({ title: 'Không thể hủy lịch hẹn', message: error.message });
+              setConfirmDeleteOpen(false);
+            }
+          }} />
+      <ConfirmDialog open={confirmDiscardOpen} title="Xác nhận hủy" message="Các thay đổi sẽ không được lưu. Bạn có chắc chắn muốn hủy?" cancelLabel="Quay lại" confirmLabel="Xác nhận" onCancel={() => setConfirmDiscardOpen(false)} onConfirm={() => { setConfirmDiscardOpen(false); setFormOpen(false); setEditingId(null); setAppointmentForm(emptyAppointment); }} />
     </div>
   );
 }

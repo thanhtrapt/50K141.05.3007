@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Button from '../../components/ui/Button.jsx';
+import { useFeedback } from '../../components/ui/FeedbackContext.jsx';
 import DataTable from '../../components/ui/DataTable.jsx';
 import FeatureNotFound from '../../components/ui/FeatureNotFound.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
@@ -26,6 +27,7 @@ export default function ServicesPage() {
   const [page, setPage] = useState(1);
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const { showDialog } = useFeedback();
 
   const routeParts = pathname.slice(basePath.length).split('/').filter(Boolean);
   const isCreate = routeParts[0] === 'tao-moi';
@@ -46,17 +48,20 @@ export default function ServicesPage() {
   const saveService = (form) => {
     if (editingId) {
       setItems((current) => current.map((service) => service.id === editingId ? { ...service, ...form, id: editingId } : service));
+      showDialog({ tone: 'success', title: 'Cập nhật thành công', message: 'Thông tin dịch vụ sau cập nhật đã được lưu' });
       navigate(`${basePath}/${editingId}`);
       return;
     }
 
     const createdService = { ...form, id: nextId };
     setItems((current) => [...current, createdService]);
+    showDialog({ tone: 'success', title: 'Tạo thành công', message: 'Thông tin dịch vụ sau khi đã được lưu' });
     navigate(basePath);
   };
 
   const deleteService = () => {
     setItems((current) => current.filter((service) => service.id !== serviceId));
+    showDialog({ tone: 'success', title: 'Xóa thành công' });
     navigate(basePath, { replace: true });
   };
 
@@ -106,10 +111,10 @@ export default function ServicesPage() {
   }
 
   const columns = [
-    { key: 'index', label: 'STT', width: '7%', align: 'center', render: (_, index) => index + 1 },
-    { key: 'id', label: 'Mã dịch vụ', width: '14%', align: 'center' },
-    { key: 'name', label: 'Tên dịch vụ', width: '43%', render: (service) => <button type="button" className="table-link" onClick={() => navigate(`${basePath}/${service.id}`)}>{service.name}</button> },
-    { key: 'price', label: 'Giá dịch vụ', width: '36%', align: 'right', render: (service) => formatCurrency(service.price) },
+    { key: 'index', label: 'STT', width: '6%', align: 'center', render: (_, index) => index + 1 },
+    { key: 'id', label: 'Mã dịch vụ', width: '18%', align: 'center' },
+    { key: 'name', label: 'Tên dịch vụ', width: '52%', render: (service) => <button type="button" className="table-link" onClick={() => navigate(`${basePath}/${service.id}`)}>{service.name}</button> },
+    { key: 'price', label: 'Giá dịch vụ', width: '24%', align: 'right', nowrap: true, render: (service) => formatCurrency(service.price) },
   ];
 
   return (

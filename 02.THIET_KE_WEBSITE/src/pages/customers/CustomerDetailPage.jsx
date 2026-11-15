@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Pencil, Trash2 } from 'lucide-react';
-import Button from '../../components/ui/Button.jsx';
+import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
 import DataTable from '../../components/ui/DataTable.jsx';
-import Modal from '../../components/ui/Modal.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
+import { ActionGroup, DeleteButton, EditButton } from '../../components/ui/ActionButtons.jsx';
 
-export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete, serviceUsagePath }) {
+export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete, serviceUsagePath, fallbackPath = '/khach-hang' }) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const purchases = customer.purchases ?? [{
     date: '—',
@@ -20,7 +19,8 @@ export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete,
     <div className="page-stack customer-detail-page">
       <PageHeader
         title="CHI TIẾT HỒ SƠ KHÁCH HÀNG"
-        actions={<Button variant="secondary" onClick={onBack}><ArrowLeft size={17} />Quay lại danh sách</Button>}
+        fallbackPath={fallbackPath}
+        onBack={onBack}
       />
       {customer.blacklisted && <div className="customer-detail__alert" role="status">Khách hàng thuộc danh sách đen!</div>}
 
@@ -31,10 +31,10 @@ export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete,
             <small>Mã khách hàng: {customer.id}</small>
             <h2>{customer.name}</h2>
           </div>
-          <div className="customer-detail__actions">
-            <Button variant="secondary" onClick={onEdit}><Pencil size={16} />Chỉnh sửa</Button>
-            <Button variant="danger" onClick={() => setDeleteConfirmOpen(true)}><Trash2 size={16} />Xóa</Button>
-          </div>
+          <ActionGroup className="customer-detail__actions">
+            <EditButton onClick={onEdit} />
+            <DeleteButton onClick={() => setDeleteConfirmOpen(true)} />
+          </ActionGroup>
         </div>
         <dl className="customer-profile-facts">
           <div><dt>Ngày sinh</dt><dd>{customer.birthday || '—'}</dd></div>
@@ -62,10 +62,10 @@ export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete,
         <DataTable
           columns={[
             { key: 'date', label: 'Ngày mua', width: '16%', align: 'center' },
-            { key: 'product', label: 'Tên sản phẩm', width: '34%' },
+            { key: 'product', label: 'Tên sản phẩm', width: '36%' },
             { key: 'quantity', label: 'Số lượng', width: '14%', align: 'center' },
-            { key: 'price', label: 'Giá', width: '18%', align: 'right' },
-            { key: 'total', label: 'Thành tiền', width: '18%', align: 'right' },
+            { key: 'price', label: 'Giá', width: '17%', align: 'right', nowrap: true },
+            { key: 'total', label: 'Thành tiền', width: '17%', align: 'right', nowrap: true },
           ]}
           rows={purchases}
           emptyMessage="Chưa có sản phẩm mua thêm"
@@ -80,15 +80,7 @@ export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete,
         <p>Buổi 2 · Đã hoàn thành · 21/10/2026</p>
       </section>
 
-      <Modal open={deleteConfirmOpen} title="XÓA HỒ SƠ KHÁCH HÀNG" onClose={() => setDeleteConfirmOpen(false)} size="small">
-        <div className="confirm-content">
-          <p>Bạn có chắc chắn muốn xóa hồ sơ khách hàng <strong>{customer.name}</strong> không?</p>
-          <div className="modal-form-actions">
-            <Button variant="secondary" onClick={() => setDeleteConfirmOpen(false)}>Hủy</Button>
-            <Button variant="danger" onClick={onDelete}>Xóa</Button>
-          </div>
-        </div>
-      </Modal>
+      <ConfirmDialog open={deleteConfirmOpen} title="Xóa hồ sơ khách hàng" message="Bạn có chắc chắn muốn xóa hồ sơ khách hàng này?" onCancel={() => setDeleteConfirmOpen(false)} onConfirm={onDelete} confirmLabel="Xóa" cancelLabel="Hủy" danger />
     </div>
   );
 }

@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { ArrowLeft, Pencil, Trash2 } from 'lucide-react';
-import Button from '../../components/ui/Button.jsx';
-import Modal from '../../components/ui/Modal.jsx';
+import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
+import { ActionGroup, DeleteButton, EditButton } from '../../components/ui/ActionButtons.jsx';
 import { formatCurrency } from '../../data/mockData.js';
 
 export default function ServiceSessionDetailPage({ service, sessionNumber, canWrite = false, onBack, onEdit, onDelete }) {
@@ -14,7 +13,8 @@ export default function ServiceSessionDetailPage({ service, sessionNumber, canWr
     <div className="page-stack service-session-detail-page">
       <PageHeader
         title="CHI TIẾT DỊCH VỤ"
-        actions={<Button variant="secondary" onClick={onBack}><ArrowLeft size={17} />Quay lại</Button>}
+        fallbackPath={`/dich-vu/${service.id}`}
+        onBack={onBack}
       />
       <section className="panel service-detail__general">
         <h2>Thông tin chung</h2>
@@ -29,16 +29,16 @@ export default function ServiceSessionDetailPage({ service, sessionNumber, canWr
         <div className="service-detail__section-heading">
           <h2>Chi tiết buổi thực hiện</h2>
           {canWrite && (
-            <div className="service-detail__actions">
-              <Button variant="secondary" onClick={onEdit}><Pencil size={16} />Chỉnh sửa</Button>
-              <Button variant="secondary" className="service-detail__delete" onClick={() => setDeleteConfirmOpen(true)}><Trash2 size={16} />Xóa</Button>
-            </div>
+            <ActionGroup className="service-detail__actions">
+              <EditButton onClick={onEdit} />
+              <DeleteButton onClick={() => setDeleteConfirmOpen(true)} />
+            </ActionGroup>
           )}
         </div>
         <div className="service-session-detail__title">
           <span className="service-detail__session-number">Buổi {sessionNumber}</span>
           <strong>{session?.name || `Buổi ${sessionNumber}`}</strong>
-          <span>{session?.minutes ? `${session.minutes} phút` : '—'}</span>
+          {session?.minutes && <span>{session.minutes} phút</span>}
         </div>
         <div className="service-session-detail__columns">
           <section>
@@ -56,15 +56,7 @@ export default function ServiceSessionDetailPage({ service, sessionNumber, canWr
         </div>
       </section>
       {canWrite && (
-        <Modal open={deleteConfirmOpen} title="XÓA THÔNG TIN DỊCH VỤ" onClose={() => setDeleteConfirmOpen(false)} size="small">
-          <div className="confirm-content">
-            <p>Bạn có chắc chắn muốn xóa dịch vụ <strong>{service.name}</strong> không?</p>
-            <div className="modal-form-actions">
-              <Button variant="secondary" onClick={() => setDeleteConfirmOpen(false)}>Hủy</Button>
-              <Button variant="danger" onClick={onDelete}>Xóa</Button>
-            </div>
-          </div>
-        </Modal>
+        <ConfirmDialog open={deleteConfirmOpen} title="Xóa dịch vụ" message="Bạn có chắc chắn muốn xóa dịch vụ này không?" onCancel={() => setDeleteConfirmOpen(false)} onConfirm={onDelete} confirmLabel="Xóa" cancelLabel="Hủy" danger />
       )}
     </div>
   );

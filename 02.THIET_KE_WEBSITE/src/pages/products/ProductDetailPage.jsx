@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { ArrowLeft, Pencil, Trash2 } from 'lucide-react';
-import Button from '../../components/ui/Button.jsx';
+import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
 import DataTable from '../../components/ui/DataTable.jsx';
-import Modal from '../../components/ui/Modal.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
+import { ActionGroup, DeleteButton, EditButton } from '../../components/ui/ActionButtons.jsx';
 import { formatCurrency } from '../../data/mockData.js';
 
-export default function ProductDetailPage({ product, onBack, onEdit, onDelete }) {
+export default function ProductDetailPage({ product, onBack, onEdit, onDelete, fallbackPath = '/my-pham' }) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   // Mã lô dự phòng theo đúng định dạng ddMMyy-NNN (10 ký tự) khi sản phẩm chưa có lô.
   const lotSuffix = String(product.id).replace(/\D/g, '').slice(-3).padStart(3, '0');
@@ -21,17 +20,18 @@ export default function ProductDetailPage({ product, onBack, onEdit, onDelete })
     <div className="page-stack product-detail-page">
       <PageHeader
         title="CHI TIẾT SẢN PHẨM"
-        actions={<Button variant="secondary" onClick={onBack}><ArrowLeft size={17} />Quay lại danh sách</Button>}
+        fallbackPath={fallbackPath}
+        onBack={onBack}
       />
       <section className="panel product-detail-page__overview">
         <div className="product-detail-page__image">
           {product.image && <img src={product.image} alt={product.name} />}
         </div>
         <div className="product-detail-page__information">
-          <div className="product-detail-page__actions">
-            <Button variant="secondary" onClick={onEdit}><Pencil size={16} />Chỉnh sửa</Button>
-            <Button variant="danger" onClick={() => setDeleteConfirmOpen(true)}><Trash2 size={16} />Xóa</Button>
-          </div>
+          <ActionGroup className="product-detail-page__actions">
+            <EditButton onClick={onEdit} />
+            <DeleteButton onClick={() => setDeleteConfirmOpen(true)} />
+          </ActionGroup>
           <dl className="product-detail-page__facts">
             <div><dt>Tên sản phẩm</dt><dd>{product.name}</dd></div>
             <div><dt>Mã MP</dt><dd>{product.id}</dd></div>
@@ -61,15 +61,7 @@ export default function ProductDetailPage({ product, onBack, onEdit, onDelete })
         />
       </section>
 
-      <Modal open={deleteConfirmOpen} title="XÓA THÔNG TIN MỸ PHẨM" onClose={() => setDeleteConfirmOpen(false)} size="small">
-        <div className="confirm-content">
-          <p>Bạn có chắc chắn muốn xóa mỹ phẩm <strong>{product.name}</strong> không?</p>
-          <div className="modal-form-actions">
-            <Button variant="secondary" onClick={() => setDeleteConfirmOpen(false)}>Hủy</Button>
-            <Button variant="danger" onClick={onDelete}>Xóa</Button>
-          </div>
-        </div>
-      </Modal>
+      <ConfirmDialog open={deleteConfirmOpen} title="Xóa mỹ phẩm" message="Bạn có chắc chắn muốn xóa mỹ phẩm này không?" onCancel={() => setDeleteConfirmOpen(false)} onConfirm={onDelete} confirmLabel="Xóa" cancelLabel="Hủy" danger />
     </div>
   );
 }

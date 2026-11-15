@@ -3,7 +3,7 @@
  * cùng domain với giao diện (Vercel Serverless Functions trong thư mục `api/`).
  * Không còn domain backend riêng, không cần biến môi trường URL và không cần CORS.
  */
-const NETWORK_ERROR_MESSAGE = 'Không thể kết nối máy chủ.';
+const NETWORK_ERROR_MESSAGE = 'Có lỗi xảy ra. Vui lòng thử lại.';
 
 export async function apiRequest(path, { method = 'GET', body, auth = true } = {}) {
   const token = window.localStorage.getItem('huong-spa-access-token');
@@ -21,6 +21,7 @@ export async function apiRequest(path, { method = 'GET', body, auth = true } = {
   } catch (cause) {
     // Chỉ lỗi mạng/kết nối mới hiển thị "Không thể kết nối máy chủ."
     console.error(`[api] Không gửi được yêu cầu ${method} ${path}:`, cause);
+    window.dispatchEvent(new CustomEvent('huong-spa:toast', { detail: { message: NETWORK_ERROR_MESSAGE } }));
     const error = new Error(NETWORK_ERROR_MESSAGE);
     error.code = 'NETWORK_ERROR';
     error.cause = cause;
@@ -42,12 +43,14 @@ export async function apiRequest(path, { method = 'GET', body, auth = true } = {
     // function crash (500). Khi đó `payload.message` không có, nên phải tách
     // riêng để không hiển thị nhầm thành lỗi mất kết nối.
     const serverMessage = isJson && typeof payload.message === 'string' ? payload.message : '';
-    const fallbackMessage = response.status === 404
-      ? `Không tìm thấy API ${path}. Kiểm tra lại cấu hình định tuyến trên Vercel.`
-      : `Máy chủ trả về lỗi ${response.status}${response.statusText ? ` ${response.statusText}` : ''}.`;
+    const isServerFailure = response.status >= 500 || !isJson;
+    const fallbackMessage = isServerFailure
+      ? 'Có lỗi xảy ra. Vui lòng thử lại.'
+      : `Yêu cầu không thành công (${response.status}).`;
 
-    const error = new Error(serverMessage || fallbackMessage);
+    const error = new Error(isServerFailure ? fallbackMessage : serverMessage || fallbackMessage);
     error.status = response.status;
+    error.isServerError = isServerFailure;
     error.code = isJson ? payload.code : 'HTTP_ERROR';
     error.fieldErrors = isJson && Array.isArray(payload.fieldErrors) ? payload.fieldErrors : [];
     console.error(
@@ -55,6 +58,9 @@ export async function apiRequest(path, { method = 'GET', body, auth = true } = {
       serverMessage || fallbackMessage,
       payload,
     );
+    if (isServerFailure) {
+      window.dispatchEvent(new CustomEvent('huong-spa:toast', { detail: { message: 'Có lỗi xảy ra. Vui lòng thử lại.' } }));
+    }
     throw error;
   }
 

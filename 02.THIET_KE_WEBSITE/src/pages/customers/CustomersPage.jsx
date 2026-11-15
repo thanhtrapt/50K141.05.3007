@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Button from '../../components/ui/Button.jsx';
+import { useFeedback } from '../../components/ui/FeedbackContext.jsx';
 import DataTable from '../../components/ui/DataTable.jsx';
 import FeatureNotFound from '../../components/ui/FeatureNotFound.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
@@ -19,6 +20,7 @@ export default function CustomersPage({ recordsOnly = false }) {
   const [page, setPage] = useState(1);
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const { showDialog } = useFeedback();
 
   const basePath = recordsOnly ? '/ho-so-khach-hang' : '/khach-hang';
   const routeParts = pathname.slice(basePath.length).split('/').filter(Boolean);
@@ -43,17 +45,24 @@ export default function CustomersPage({ recordsOnly = false }) {
   const saveCustomer = (form) => {
     if (editingId) {
       setItems((current) => current.map((customer) => customer.id === editingId ? { ...customer, ...form } : customer));
+      showDialog({ tone: 'success', title: 'Cập nhật thành công' });
       navigate(`${basePath}/${editingId}`);
       return;
     }
 
     const createdCustomer = { ...form, id: nextId, visits: 0 };
     setItems((current) => [...current, createdCustomer]);
+    showDialog({ tone: 'success', title: 'Tạo hồ sơ khách hàng thành công' });
     navigate(basePath);
   };
 
   const deleteCustomer = () => {
+    if (selected?.hasRelatedData || selected?.activeServices?.length || selected?.purchases?.length) {
+      showDialog({ title: '', message: 'Không thể xóa hồ sơ khách hàng này vì hồ sơ đang có dữ liệu liên quan khác!' });
+      return;
+    }
     setItems((current) => current.filter((customer) => customer.id !== customerId));
+    showDialog({ tone: 'success', title: 'Xóa khách hàng thành công' });
     navigate(basePath, { replace: true });
   };
 
@@ -71,13 +80,21 @@ export default function CustomersPage({ recordsOnly = false }) {
     }
 
     if (routeParts[1] === 'dich-vu-dang-su-dung') {
-      return <CustomerActiveServicePage key={customerId} customer={selected} onBack={() => navigate(`${basePath}/${customerId}`)} />;
+      return (
+        <CustomerActiveServicePage
+          key={customerId}
+          customer={selected}
+          fallbackPath={`${basePath}/${customerId}`}
+          onBack={() => navigate(`${basePath}/${customerId}`)}
+        />
+      );
     }
 
     return (
       <CustomerDetailPage
         customer={selected}
         serviceUsagePath={`${basePath}/${customerId}/dich-vu-dang-su-dung`}
+        fallbackPath={basePath}
         onBack={() => navigate(basePath)}
         onEdit={() => openEdit(selected)}
         onDelete={deleteCustomer}
@@ -86,10 +103,10 @@ export default function CustomersPage({ recordsOnly = false }) {
   }
 
   const columns = [
-    { key: 'id', label: 'Mã khách hàng', width: '22%', align: 'center' },
-    { key: 'name', label: 'Họ và tên', width: '30%', render: (customer) => <button type="button" className="table-link" onClick={() => openDetail(customer)}>{customer.name}</button> },
-    { key: 'birthday', label: 'Ngày sinh', width: '22%', align: 'center' },
-    { key: 'phone', label: 'Số điện thoại', width: '26%', align: 'center' },
+    { key: 'id', label: 'Mã khách hàng', width: '18%', align: 'center' },
+    { key: 'name', label: 'Họ và tên', width: '42%', render: (customer) => <button type="button" className="table-link" onClick={() => openDetail(customer)}>{customer.name}</button> },
+    { key: 'birthday', label: 'Ngày sinh', width: '18%', align: 'center' },
+    { key: 'phone', label: 'Số điện thoại', width: '22%', align: 'center' },
   ];
 
   return (

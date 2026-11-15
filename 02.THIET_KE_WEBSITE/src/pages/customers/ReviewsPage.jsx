@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Image, Star } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import Button from '../../components/ui/Button.jsx';
 import DataTable from '../../components/ui/DataTable.jsx';
 import FeatureNotFound from '../../components/ui/FeatureNotFound.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
@@ -21,10 +20,10 @@ export default function ReviewsPage() {
   const pageCount = Math.max(1, Math.ceil(rows.length / 9));
   const pageRows = rows.slice((page - 1) * 9, page * 9);
   const columns = [
-    { key: 'date', label: 'Thời gian đánh giá', width: '22%', align: 'center' },
-    { key: 'customer', label: 'Họ và tên khách hàng', width: '25%', render: (review) => <button type="button" className="table-link" onClick={() => navigate(`/danh-gia/${review.id}`)}>{review.customer}</button> },
-    { key: 'service', label: 'Tên dịch vụ thực hiện', width: '32%' },
-    { key: 'stars', label: 'Mức đánh giá', width: '21%', align: 'center', render: (review) => (
+    { key: 'date', label: 'Thời gian đánh giá', width: '20%', align: 'center' },
+    { key: 'customer', label: 'Họ và tên khách hàng', width: '26%', render: (review) => <button type="button" className="table-link" onClick={() => navigate(`/danh-gia/${review.id}`)}>{review.customer}</button> },
+    { key: 'service', label: 'Tên dịch vụ thực hiện', width: '34%' },
+    { key: 'stars', label: 'Mức đánh giá', width: '20%', align: 'center', render: (review) => (
       <span className="rating-stars" aria-label={`${review.stars} trên 5 sao`}>
         {Array.from({ length: 5 }, (_, index) => <Star key={index} size={17} fill={index < review.stars ? 'currentColor' : 'none'} />)}
       </span>
@@ -36,7 +35,11 @@ export default function ReviewsPage() {
     const customer = customers.find((item) => item.name === selected.customer);
     return (
       <div className="page-stack review-detail-page">
-        <PageHeader title="CHI TIẾT ĐÁNH GIÁ" actions={<Button variant="secondary" onClick={() => navigate('/danh-gia')}>Quay lại danh sách</Button>} />
+        <PageHeader
+          title="CHI TIẾT ĐÁNH GIÁ"
+          fallbackPath="/danh-gia"
+          onBack={() => navigate('/danh-gia')}
+        />
         <section className="panel review-detail-page__panel">
           <h2>Thông tin chung</h2>
           <dl className="review-detail-page__facts">

@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeft, Pencil, Trash2 } from 'lucide-react';
-import Button from '../../components/ui/Button.jsx';
-import Modal from '../../components/ui/Modal.jsx';
+import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
+import { ActionGroup, DeleteButton, EditButton } from '../../components/ui/ActionButtons.jsx';
 import { formatCurrency } from '../../data/mockData.js';
 
 export default function ServiceDetailPage({ service, canWrite = false, onBack, onEdit, onDelete, onSessionDetail }) {
@@ -16,7 +15,8 @@ export default function ServiceDetailPage({ service, canWrite = false, onBack, o
     <div className="page-stack service-detail-page">
       <PageHeader
         title="CHI TIẾT DỊCH VỤ"
-        actions={<Button variant="secondary" onClick={onBack}><ArrowLeft size={17} />Quay lại</Button>}
+        fallbackPath="/dich-vu"
+        onBack={onBack}
       />
 
       <section className="panel service-detail__general">
@@ -33,22 +33,32 @@ export default function ServiceDetailPage({ service, canWrite = false, onBack, o
         <div className="service-detail__section-heading">
           <h2>Buổi thực hiện</h2>
           {canWrite && (
-            <div className="service-detail__actions">
-              <Button variant="secondary" onClick={onEdit}><Pencil size={16} />Chỉnh sửa</Button>
-              <Button variant="secondary" className="service-detail__delete" onClick={() => setDeleteConfirmOpen(true)}><Trash2 size={16} />Xóa</Button>
-            </div>
+            <ActionGroup className="service-detail__actions">
+              <EditButton onClick={onEdit} />
+              <DeleteButton onClick={() => setDeleteConfirmOpen(true)} />
+            </ActionGroup>
           )}
         </div>
         {sessions.length ? (
           <div className="service-detail__session-grid">
-            {sessions.map((session, index) => (
-              <article className="service-detail__session-card" key={`session-${index}`}>
-                <span className="service-detail__session-number">Buổi {index + 1}</span>
-                <strong>{session?.name || `Buổi ${index + 1}`}</strong>
-                <div><b>Thời gian</b><span>{session?.minutes ? `${session.minutes} phút` : '—'}</span></div>
-                <Button variant="secondary" onClick={() => onSessionDetail(index + 1)}>Xem chi tiết</Button>
-              </article>
-            ))}
+            {sessions.map((session, index) => {
+              const displayName = `Buổi ${index + 1}`;
+              const hasMinutes = Boolean(session?.minutes && session.minutes !== '—');
+              return (
+                <button
+                  type="button"
+                  className="service-detail__session-card"
+                  key={`session-${index}`}
+                  onClick={() => onSessionDetail(index + 1)}
+                  aria-label={`Xem chi tiết ${displayName}`}
+                >
+                  <strong className="service-detail__session-name">{displayName}</strong>
+                  {hasMinutes && (
+                    <span className="service-detail__session-duration">{session.minutes} phút</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         ) : (
           <p className="muted-copy">Chưa có thông tin buổi thực hiện.</p>
@@ -61,15 +71,7 @@ export default function ServiceDetailPage({ service, canWrite = false, onBack, o
       </section>
 
       {canWrite && (
-        <Modal open={deleteConfirmOpen} title="XÓA THÔNG TIN DỊCH VỤ" onClose={() => setDeleteConfirmOpen(false)} size="small">
-          <div className="confirm-content">
-            <p>Bạn có chắc chắn muốn xóa dịch vụ <strong>{service.name}</strong> không?</p>
-            <div className="modal-form-actions">
-              <Button variant="secondary" onClick={() => setDeleteConfirmOpen(false)}>Hủy</Button>
-              <Button variant="danger" onClick={onDelete}>Xóa</Button>
-            </div>
-          </div>
-        </Modal>
+        <ConfirmDialog open={deleteConfirmOpen} title="Xóa dịch vụ" message="Bạn có chắc chắn muốn xóa dịch vụ này không?" onCancel={() => setDeleteConfirmOpen(false)} onConfirm={onDelete} confirmLabel="Xóa" cancelLabel="Hủy" danger />
       )}
     </div>
   );

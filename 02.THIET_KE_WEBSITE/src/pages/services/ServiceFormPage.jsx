@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import Button from '../../components/ui/Button.jsx';
+import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
+import FeedbackDialog from '../../components/ui/FeedbackDialog.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import SelectField from '../../components/ui/SelectField.jsx';
 import TextField from '../../components/ui/TextField.jsx';
@@ -21,6 +23,8 @@ export default function ServiceFormPage({ record, nextId, onCancel, onSave }) {
   const [form, setForm] = useState({ name: '', price: '', sessions: '', result: '' });
   const [sessionDetails, setSessionDetails] = useState([createSession()]);
   const [entryErrors, setEntryErrors] = useState({});
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [validation, setValidation] = useState(null);
 
   useEffect(() => {
     setForm(record
@@ -75,13 +79,21 @@ export default function ServiceFormPage({ record, nextId, onCancel, onSave }) {
 
   const handleSubmit = (event) => {
     event.preventDefault();
+    if (!form.name.trim() || !form.price || !form.sessions || !form.result.trim()) {
+      setValidation({ title: 'Thông tin chưa hoàn tất', message: 'Yêu cầu nhập lại' });
+      return;
+    }
+    if (Number(form.price) <= 0 || Number(form.sessions) < 1 || sessionDetails.some((session) => !session.name.trim() || Number(session.minutes) <= 0)) {
+      setValidation({ title: 'Thông tin không hợp lệ', message: 'Yêu cầu nhập lại' });
+      return;
+    }
     onSave({ ...form, price: Number(form.price), sessions: Number(form.sessions), sessionDetails });
   };
 
   return (
     <div className="page-stack service-form-page">
       <PageHeader title={record ? 'CHỈNH SỬA THÔNG TIN DỊCH VỤ' : 'TẠO THÔNG TIN DỊCH VỤ'} />
-      <form className="service-form" onSubmit={handleSubmit}>
+      <form className="service-form" onSubmit={handleSubmit} noValidate>
         <section className="panel service-form__general">
           <h2>Thông tin chung</h2>
           <div className="service-form__general-grid">
@@ -136,10 +148,12 @@ export default function ServiceFormPage({ record, nextId, onCancel, onSave }) {
         </section>
 
         <div className="form-actions service-form__actions">
-          <Button variant="secondary" onClick={onCancel}>Hủy</Button>
+          <Button variant="secondary" onClick={() => setCancelOpen(true)}>Hủy</Button>
           <Button type="submit">Lưu</Button>
         </div>
       </form>
+      <FeedbackDialog open={Boolean(validation)} title={validation?.title} message={validation?.message} onClose={() => setValidation(null)} />
+      <ConfirmDialog open={cancelOpen} title="Xác nhận hủy" message="Các thay đổi sẽ không được lưu. Bạn có chắc chắn muốn hủy?" onCancel={() => setCancelOpen(false)} onConfirm={onCancel} />
     </div>
   );
 }

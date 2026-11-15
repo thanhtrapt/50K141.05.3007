@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { CircleAlert, Package, PackageX } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import DataTable from '../../components/ui/DataTable.jsx';
+import FeedbackDialog from '../../components/ui/FeedbackDialog.jsx';
+import Button from '../../components/ui/Button.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import Pagination from '../../components/ui/Pagination.jsx';
 import SearchBox from '../../components/ui/SearchBox.jsx';
@@ -25,6 +27,7 @@ export default function AlertsPage() {
   const isStock = pathname.endsWith('/ton-kho');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [stockWarningOpen, setStockWarningOpen] = useState(isStock && sessionStorage.getItem('huong-spa-stock-warning-seen') !== 'true');
   const source = isStock ? lowStockItems : expiryItems;
   const rows = useMemo(
     () => source.filter((item) => `${item.id} ${item.name} ${item.lot}`.toLowerCase().includes(query.toLowerCase())),
@@ -35,19 +38,19 @@ export default function AlertsPage() {
   const columns = isStock
     ? [
         { key: 'id', label: 'Mã sản phẩm', width: '14%', align: 'center' },
-        { key: 'name', label: 'Tên sản phẩm', width: '31%' },
-        { key: 'category', label: 'Phân loại', width: '19%' },
-        { key: 'stock', label: 'Số lượng tồn kho hiện tại', width: '19%', align: 'center' },
-        { key: 'status', label: 'Trạng thái tồn kho', width: '17%', align: 'center', render: (item) => <StatusBadge tone={item.tone}>{item.status}</StatusBadge> },
+        { key: 'name', label: 'Tên sản phẩm', width: '34%' },
+        { key: 'category', label: 'Phân loại', width: '18%' },
+        { key: 'stock', label: 'Tồn kho', width: '16%', align: 'center' },
+        { key: 'status', label: 'Trạng thái tồn kho', width: '18%', align: 'center', render: (item) => <StatusBadge tone={item.tone}>{item.status}</StatusBadge> },
       ]
     : [
-        { key: 'lot', label: 'Mã lô', width: '10%', align: 'center' },
-        { key: 'id', label: 'Mã SP', width: '11%', align: 'center' },
-        { key: 'name', label: 'Tên sản phẩm', width: '21%' },
-        { key: 'category', label: 'Phân loại', width: '15%' },
-        { key: 'expiry', label: 'Hạn sử dụng', width: '14%', align: 'center' },
-        { key: 'days', label: 'Số ngày còn lại', width: '14%', align: 'center' },
-        { key: 'status', label: 'Trạng thái', width: '15%', align: 'center', render: (item) => <StatusBadge tone={item.tone}>{item.status}</StatusBadge> },
+        { key: 'lot', label: 'Mã lô', width: '12%', align: 'center' },
+        { key: 'id', label: 'Mã SP', width: '12%', align: 'center' },
+        { key: 'name', label: 'Tên sản phẩm', width: '26%' },
+        { key: 'category', label: 'Phân loại', width: '14%' },
+        { key: 'expiry', label: 'Hạn sử dụng', width: '13%', align: 'center' },
+        { key: 'days', label: 'Số ngày còn lại', width: '11%', align: 'center' },
+        { key: 'status', label: 'Trạng thái', width: '12%', align: 'center', render: (item) => <StatusBadge tone={item.tone}>{item.status}</StatusBadge> },
       ];
   const heading = isStock ? 'CẢNH BÁO MỸ PHẨM TỒN KHO' : 'CẢNH BÁO HẠN SỬ DỤNG';
   const panelHeading = isStock ? 'Danh sách mỹ phẩm tồn kho' : 'Danh sách mỹ phẩm sắp hết hạn sử dụng';
@@ -70,6 +73,13 @@ export default function AlertsPage() {
   return (
     <div className={`page-stack alert-page${isStock ? ' alert-page--stock' : ' alert-page--expiry'}`}>
       <PageHeader title={heading} />
+      <FeedbackDialog
+        open={stockWarningOpen}
+        title="Cảnh báo tồn kho"
+        message="Cảnh báo có mỹ phẩm đã chạm ngưỡng tối thiểu!"
+        closeLabel="Xem thông báo"
+        onClose={() => { setStockWarningOpen(false); sessionStorage.setItem('huong-spa-stock-warning-seen', 'true'); }}
+      ><Button variant="secondary" onClick={() => { setStockWarningOpen(false); sessionStorage.setItem('huong-spa-stock-warning-seen', 'true'); }}>Đóng</Button></FeedbackDialog>
       {isStock && summary}
       <section className="panel alert-panel">
         {!isStock && <>

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Button from '../../components/ui/Button.jsx';
+import { useFeedback } from '../../components/ui/FeedbackContext.jsx';
 import DataTable from '../../components/ui/DataTable.jsx';
 import FeatureNotFound from '../../components/ui/FeatureNotFound.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
@@ -24,6 +25,7 @@ export default function ProductsPage() {
   const [page, setPage] = useState(1);
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const { showDialog } = useFeedback();
 
   const routeParts = pathname.slice(basePath.length).split('/').filter(Boolean);
   const isCreate = routeParts[0] === 'tao-moi';
@@ -43,16 +45,19 @@ export default function ProductsPage() {
   const saveProduct = (form) => {
     if (editingId) {
       setItems((current) => current.map((product) => product.id === editingId ? { ...product, ...form, id: editingId } : product));
+      showDialog({ tone: 'success', title: 'Cập nhật thành công', message: 'Thông tin mỹ phẩm sau cập nhật đã được lưu.', size: 'medium', wideButton: true });
       navigate(`${basePath}/${editingId}`);
       return;
     }
 
     setItems((current) => [...current, { ...form, id: nextId }]);
+    showDialog({ tone: 'success', title: 'Tạo thông tin thành công', message: 'Thông tin mỹ phẩm đã được lưu.', size: 'medium', wideButton: true });
     navigate(basePath);
   };
 
   const deleteProduct = () => {
     setItems((current) => current.filter((product) => product.id !== productId));
+    showDialog({ tone: 'success', title: 'Xóa mỹ phẩm thành công' });
     navigate(basePath, { replace: true });
   };
 
@@ -78,6 +83,7 @@ export default function ProductsPage() {
     return (
       <ProductDetailPage
         product={selected}
+        fallbackPath={basePath}
         onBack={() => navigate(basePath)}
         onEdit={() => navigate(`${basePath}/${productId}/chinh-sua`)}
         onDelete={deleteProduct}
@@ -86,11 +92,11 @@ export default function ProductsPage() {
   }
 
   const columns = [
-    { key: 'id', label: 'Mã MP', width: '12%', align: 'center' },
-    { key: 'name', label: 'Tên mỹ phẩm', width: '32%', render: (product) => <button type="button" className="table-link" onClick={() => navigate(`${basePath}/${product.id}`)}>{product.name}</button> },
-    { key: 'image', label: 'Hình ảnh minh họa', width: '16%', align: 'center', render: (product) => <TableThumb src={product.image} alt={product.name} /> },
-    { key: 'stock', label: 'Tồn kho', width: '16%', align: 'center' },
-    { key: 'price', label: 'Giá bán', width: '24%', align: 'right', render: (product) => formatCurrency(product.price) },
+    { key: 'id', label: 'Mã MP', width: '16%', align: 'center', nowrap: true },
+    { key: 'name', label: 'Tên mỹ phẩm', width: '28%', render: (product) => <button type="button" className="table-link" onClick={() => navigate(`${basePath}/${product.id}`)}>{product.name}</button> },
+    { key: 'image', label: 'Hình ảnh minh họa', width: '23%', align: 'center', nowrap: true, render: (product) => <TableThumb src={product.image} alt={product.name} /> },
+    { key: 'stock', label: 'Tồn kho', width: '15%', align: 'center', nowrap: true },
+    { key: 'price', label: 'Giá bán', width: '18%', align: 'right', nowrap: true, render: (product) => formatCurrency(product.price) },
   ];
 
   return (
@@ -110,7 +116,7 @@ export default function ProductsPage() {
         actions={<Button onClick={() => navigate(`${basePath}/tao-moi`)}><Plus size={18} />Thêm mỹ phẩm</Button>}
       />
       <section className="panel page-list-panel">
-        <DataTable columns={columns} rows={pageItems} rowKey="id" emptyMessage="Không tìm thấy mỹ phẩm phù hợp!" />
+        <DataTable fitContainer columns={columns} rows={pageItems} rowKey="id" emptyMessage="Không tìm thấy mỹ phẩm phù hợp!" />
         <div className="panel__footer"><Pagination page={page} pageCount={pageCount} onChange={setPage} /></div>
       </section>
     </div>

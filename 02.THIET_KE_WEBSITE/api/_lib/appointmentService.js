@@ -34,10 +34,11 @@ async function appointmentSession(customerId,sessionId,transaction) {
 }
 
 async function busyAppointments(date,excludeId,transaction) {
-  const result=await requestFor(transaction).input('date',dbTypes.Date,date).input('exclude',dbTypes.Char(10),excludeId||'').query(`SELECT maLichHen AS id,
-    CONVERT(varchar(5),gioBatDau,108) AS startTime,CONVERT(varchar(5),gioKetThuc,108) AS endTime,trangThai AS status
-    FROM dbo.LichHen WITH (UPDLOCK,HOLDLOCK) WHERE ngayHen=@date AND trangThai NOT IN (N'Đã hủy',N'Hoàn thành') AND maLichHen<>@exclude`);
-  return result.recordset.map(row=>({...row,id:row.id.trim(),startMinutes:mins(row.startTime),endMinutes:mins(row.endTime)}));
+  const result=await requestFor(transaction).input('date',dbTypes.Date,date).input('exclude',dbTypes.Char(10),excludeId||'').query(`SELECT l.maLichHen AS id,
+    CONVERT(varchar(5),l.gioBatDau,108) AS startTime,CONVERT(varchar(5),l.gioKetThuc,108) AS endTime,l.trangThai AS status,k.hoTen AS customerName
+    FROM dbo.LichHen AS l WITH (UPDLOCK,HOLDLOCK) LEFT JOIN dbo.KhachHang AS k ON k.maKhachHang=l.maKhachHang
+    WHERE l.ngayHen=@date AND l.trangThai NOT IN (N'Đã hủy',N'Hoàn thành') AND l.maLichHen<>@exclude`);
+  return result.recordset.map(row=>({...row,id:row.id.trim(),customerName:row.customerName||'lịch hẹn khác',startMinutes:mins(row.startTime),endMinutes:mins(row.endTime)}));
 }
 
 function freeAt(start,duration,busy,capacity) {
@@ -74,7 +75,10 @@ async function checkSlot({date,startTime,duration,excludeId,transaction}) {
   const busy=await busyAppointments(date,excludeId,transaction);
   const capacity=Math.max(1,Math.min(Number(config.SERVICE_BED_COUNT||3),Number(config.SERVICE_PROVIDER_COUNT||1)));
   if(!freeAt(start,duration,busy,capacity)) {
-    throw err(409,'APPOINTMENT_CONFLICT','Lịch hẹn bị trùng!',[{field:'startTime',message:'Lịch hẹn bị trùng!',suggestions:availableSlots({date,duration,busy,config})}]);
+    const end=start+duration;
+    const conflict=busy.find(row=>start<row.endMinutes&&row.startMinutes<end);
+    const detail=conflict?`${clock(start)}–${clock(end)} trùng lịch ${conflict.customerName} (${conflict.startTime}–${conflict.endTime}).`:'Giờ hẹn bị trùng lịch với lịch khác.';
+    throw err(409,'APPOINTMENT_CONFLICT','Giờ hẹn bị trùng lịch với lịch khác',[{field:'startTime',message:detail,suggestions:availableSlots({date,duration,busy,config})}]);
   }
   return {endTime:clock(end),config};
 }
@@ -185,7 +189,7 @@ export async function createAppointment(body,user) {
     }
     const customer=(await requestFor(transaction).input('id',dbTypes.Char(10),customerId).query('SELECT maKhachHang,hoTen,soDienThoai,soLanHuyLich FROM dbo.KhachHang WITH (UPDLOCK,HOLDLOCK) WHERE maKhachHang=@id')).recordset[0];
     if(!customer)throw notFound('Không tìm thấy khách hàng phù hợp!');
-    if(Number(customer.soLanHuyLich)>=threshold)throw err(409,'CUSTOMER_BLACKLISTED','Khách hàng thuộc danh sách đen!');
+    if(Number(customer.soLanHuyLich)>=threshold)throw err(409,'CUSTOMER_BLACKLISTED','Khách hàng thuộc danh sách đen!',[{field:'customerPhone',message:`${customer.hoTen} đã hủy lịch ${customer.soLanHuyLich} lần. Vui lòng cân nhắc trước khi lưu; bạn vẫn có thể tạo lịch hẹn.`}]);
     const session=await appointmentSession(customerId,sessionId,transaction);
     const slot=await checkSlot({date,startTime,duration:session.durationMinutes,transaction});
     const duplicate=(await requestFor(transaction).input('session',dbTypes.Char(10),sessionId).query(`SELECT TOP(1) maLichHen FROM dbo.LichHen WITH (UPDLOCK,HOLDLOCK)
