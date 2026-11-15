@@ -53,10 +53,9 @@ export function validateService(body,{partial=false}={}) {
   return result;
 }
 
-async function loadService(id,{activeOnly=true,transaction}={}) {
-  const where=activeOnly?' AND d.trangThai=1':'';
-  const head=(await requestFor(transaction).input('id',dbTypes.Char(10),id).query(`SELECT d.maDichVu AS id,d.tenDV AS name,d.giaDV AS price,d.tongSoBuoi AS totalSessions,d.trangThai AS isActive
-    FROM dbo.DichVu d WHERE d.maDichVu=@id${where}`)).recordset[0];
+async function loadService(id,{transaction}={}) {
+  const head=(await requestFor(transaction).input('id',dbTypes.Char(10),id).query(`SELECT d.maDichVu AS id,d.tenDV AS name,d.giaDV AS price,d.tongSoBuoi AS totalSessions,TRUE AS isActive
+    FROM dbo.DichVu d WHERE d.maDichVu=@id`)).recordset[0];
   if(!head)throw notFound('Dịch vụ không tồn tại');
   const sessions=(await requestFor(transaction).input('id',dbTypes.Char(10),id).query(`SELECT maCT_DichVu AS id,tenBuoi AS name,kyThuat AS technique,
     thoiGianThucHien AS durationMinutes,myPhamSD AS cosmeticsUsage FROM dbo.CT_DichVu WHERE maDichVu=@id ORDER BY maCT_DichVu`)).recordset;
@@ -65,7 +64,7 @@ async function loadService(id,{activeOnly=true,transaction}={}) {
 
 export async function listServices(query={}) {
   const rows=(await getPool().request().query(`SELECT d.maDichVu AS id,d.tenDV AS name,d.giaDV AS price,d.tongSoBuoi AS totalSessions
-    FROM dbo.DichVu d WHERE d.trangThai=1 ORDER BY d.tenDV,d.maDichVu`)).recordset.map(x=>({...x,id:x.id.trim(),price:Number(x.price),totalSessions:Number(x.totalSessions)}));
+    FROM dbo.DichVu d ORDER BY d.tenDV,d.maDichVu`)).recordset.map(x=>({...x,id:x.id.trim(),price:Number(x.price),totalSessions:Number(x.totalSessions)}));
   const keyword=normalizeVietnamese(query.keyword||'');
   const filtered=keyword?rows.filter(x=>normalizeVietnamese(`${x.id} ${x.name}`).includes(keyword)):rows;
   return paginate(filtered,query.page,query.limit);
@@ -75,7 +74,7 @@ export async function getService(id) { return loadService(id); }
 
 async function ensureUniqueName(name,excludeId,transaction) {
   const result=await requestFor(transaction).input('name',dbTypes.NVarChar(100),name).input('exclude',dbTypes.Char(10),excludeId||'').query(`SELECT TOP(1) maDichVu FROM dbo.DichVu WITH (UPDLOCK,HOLDLOCK)
-    WHERE trangThai=1 AND tenDV=@name AND maDichVu<>@exclude`);
+    WHERE tenDV=@name AND maDichVu<>@exclude`);
   if(result.recordset.length)throw invalid('Thông tin chưa hoàn tất, yêu cầu nhập lại',[{field:'name',message:'Tên dịch vụ đã tồn tại'}]);
 }
 
@@ -96,7 +95,7 @@ export async function createService(body,user) {
     const id=await nextCode('DV',transaction);
     await requestFor(transaction).input('id',dbTypes.Char(10),id).input('name',dbTypes.NVarChar(100),value.tenDV)
       .input('price',dbTypes.Money,value.giaDV).input('count',dbTypes.Int,value.tongSoBuoi)
-      .query('INSERT INTO dbo.DichVu(maDichVu,tenDV,giaDV,tongSoBuoi,trangThai) VALUES(@id,@name,@price,@count,1)');
+      .query('INSERT INTO dbo.DichVu(maDichVu,tenDV,giaDV,tongSoBuoi) VALUES(@id,@name,@price,@count)');
     await insertSessions(transaction,id,value.sessions,user);
     const after={maDichVu:id,...value,trangThai:true};
     await insertAudit({transaction,user,action:'Tạo thông tin dịch vụ',entity:'DichVu',entityId:id,before:null,after});
