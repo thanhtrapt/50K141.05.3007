@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Button from '../../components/ui/Button.jsx';
@@ -9,27 +9,52 @@ import PageHeader from '../../components/ui/PageHeader.jsx';
 import PageListToolbar from '../../components/ui/PageListToolbar.jsx';
 import Pagination from '../../components/ui/Pagination.jsx';
 import SearchBox from '../../components/ui/SearchBox.jsx';
-import { customers as initialCustomers } from '../../data/mockData.js';
+import { apiList, apiRequest } from '../../api.js';
 import CustomerDetailPage from './CustomerDetailPage.jsx';
 import CustomerFormPage from './CustomerFormPage.jsx';
 import CustomerActiveServicePage from './CustomerActiveServicePage.jsx';
 
 export default function CustomersPage({ recordsOnly = false }) {
-  const [items, setItems] = useState(initialCustomers);
+  const [items, setItems] = useState([]);
+  const [selectedDetail, setSelectedDetail] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const { showDialog } = useFeedback();
 
   const basePath = recordsOnly ? '/ho-so-khach-hang' : '/khach-hang';
   const routeParts = pathname.slice(basePath.length).split('/').filter(Boolean);
+  const packageId = new URLSearchParams(search).get('packageId');
   const isCreate = routeParts[0] === 'tao-moi';
   const editingId = routeParts.length === 2 && routeParts[1] === 'chinh-sua' ? routeParts[0] : null;
   const customerId = !isCreate && routeParts[0] !== 'undefined' ? routeParts[0] : null;
-  const record = items.find((customer) => customer.id === editingId);
-  const selected = items.find((customer) => customer.id === customerId);
-  const nextId = `KH${String(items.length + 1).padStart(8, '0')}`;
+  const recordRow = items.find((customer) => customer.id === editingId);
+  const record = recordRow ? { ...recordRow, birthday: recordRow.dateOfBirth?.split('-').reverse().join('/') ?? '' } : null;
+  const selected = customerId ? selectedDetail ?? items.find((customer) => customer.id === customerId) : null;
+  const nextId = 'Tự động tạo';
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    apiList('/api/customers')
+      .then((rows) => { if (active) setItems(rows); })
+      .catch((error) => { if (active) setLoadError(error.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    setSelectedDetail(null);
+    if (!customerId) return () => { active = false; };
+    apiRequest(`/api/customers/${encodeURIComponent(customerId)}`)
+      .then((customer) => { if (active) setSelectedDetail(customer); })
+      .catch((error) => { if (active) setLoadError(error.message); });
+    return () => { active = false; };
+  }, [customerId]);
 
   const filtered = useMemo(
     () => items.filter((customer) => `${customer.id} ${customer.name} ${customer.phone}`.toLowerCase().includes(query.toLowerCase())),
@@ -42,29 +67,53 @@ export default function CustomersPage({ recordsOnly = false }) {
   const openEdit = (customer) => navigate(`${basePath}/${customer.id}/chinh-sua`);
   const cancelForm = () => navigate(editingId ? `${basePath}/${editingId}` : basePath);
 
-  const saveCustomer = (form) => {
-    if (editingId) {
-      setItems((current) => current.map((customer) => customer.id === editingId ? { ...customer, ...form } : customer));
-      showDialog({ tone: 'success', title: 'Cập nhật thành công' });
-      navigate(`${basePath}/${editingId}`);
-      return;
+  const saveCustomer = async (form) => {
+    const [day, month, year] = String(form.birthday || '').split('/');
+    const body = { name: form.name, phone: form.phone, dateOfBirth: `${year}-${month}-${day}` };
+    const saved = editingId
+      ? await apiRequest(`/api/customers/${encodeURIComponent(editingId)}`, { method: 'PUT', body })
+      : await apiRequest('/api/customers', { method: 'POST', body });
+    const saleGroups = new Map();
+    for (const purchase of form.purchases ?? []) {
+      if (!purchase.productId || !purchase.quantityValue || !purchase.saleDate) continue;
+      const group = saleGroups.get(purchase.saleDate) ?? [];
+      group.push({ cosmeticId: purchase.productId, quantity: purchase.quantityValue });
+      saleGroups.set(purchase.saleDate, group);
     }
-
-    const createdCustomer = { ...form, id: nextId, visits: 0 };
-    setItems((current) => [...current, createdCustomer]);
-    showDialog({ tone: 'success', title: 'Tạo hồ sơ khách hàng thành công' });
-    navigate(basePath);
+    let saleError = '';
+    for (const [soldAt, items] of saleGroups) {
+      try {
+        await apiRequest(`/api/customers/${encodeURIComponent(saved.id)}/retail-sales`, {
+          method: 'POST',
+          body: { soldAt, items },
+        });
+      } catch (error) {
+        saleError = error.message;
+        break;
+      }
+    }
+    const rows = await apiList('/api/customers');
+    setItems(rows);
+    showDialog(saleError
+      ? { title: 'Hồ sơ đã lưu, giao dịch bán lẻ chưa hoàn tất', message: saleError }
+      : { tone: 'success', title: editingId ? 'Cập nhật thành công' : 'Tạo hồ sơ khách hàng thành công', message: 'Dữ liệu đã được lưu vào cơ sở dữ liệu SQL.' });
+    navigate(editingId ? `${basePath}/${editingId}` : basePath);
+    return saved;
   };
 
-  const deleteCustomer = () => {
-    if (selected?.hasRelatedData || selected?.activeServices?.length || selected?.purchases?.length) {
-      showDialog({ title: '', message: 'Không thể xóa hồ sơ khách hàng này vì hồ sơ đang có dữ liệu liên quan khác!' });
-      return;
+  const deleteCustomer = async () => {
+    try {
+      await apiRequest(`/api/customers/${encodeURIComponent(customerId)}`, { method: 'DELETE' });
+      setItems((current) => current.filter((customer) => customer.id !== customerId));
+      showDialog({ tone: 'success', title: 'Xóa khách hàng thành công' });
+      navigate(basePath, { replace: true });
+    } catch (error) {
+      showDialog({ title: 'Không thể xóa hồ sơ khách hàng', message: error.message });
     }
-    setItems((current) => current.filter((customer) => customer.id !== customerId));
-    showDialog({ tone: 'success', title: 'Xóa khách hàng thành công' });
-    navigate(basePath, { replace: true });
   };
+
+  if (loading) return <div className="panel data-loading" role="status">Đang tải dữ liệu khách hàng từ SQL…</div>;
+  if (loadError && !items.length) return <div className="panel data-error" role="alert">Không tải được dữ liệu khách hàng: {loadError}</div>;
 
   if (isCreate || editingId) {
     if (editingId && !record) {
@@ -84,6 +133,7 @@ export default function CustomersPage({ recordsOnly = false }) {
         <CustomerActiveServicePage
           key={customerId}
           customer={selected}
+          packageId={packageId}
           fallbackPath={`${basePath}/${customerId}`}
           onBack={() => navigate(`${basePath}/${customerId}`)}
         />
@@ -105,7 +155,7 @@ export default function CustomersPage({ recordsOnly = false }) {
   const columns = [
     { key: 'id', label: 'Mã khách hàng', width: '18%', align: 'center' },
     { key: 'name', label: 'Họ và tên', width: '42%', render: (customer) => <button type="button" className="table-link" onClick={() => openDetail(customer)}>{customer.name}</button> },
-    { key: 'birthday', label: 'Ngày sinh', width: '18%', align: 'center' },
+    { key: 'dateOfBirth', label: 'Ngày sinh', width: '18%', align: 'center', render: (customer) => customer.dateOfBirth?.split('-').reverse().join('/') || '—' },
     { key: 'phone', label: 'Số điện thoại', width: '22%', align: 'center' },
   ];
 

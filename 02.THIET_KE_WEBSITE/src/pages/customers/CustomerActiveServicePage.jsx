@@ -16,71 +16,68 @@ import FeedbackDialog from '../../components/ui/FeedbackDialog.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import StatusBadge from '../../components/ui/StatusBadge.jsx';
 import TreatmentReportModal from '../../components/reports/TreatmentReportModal.jsx';
-import { activeServiceUsage, formatCurrency } from '../../data/mockData.js';
+import { apiRequest } from '../../api.js';
+import { formatCurrency } from '../../data/mockData.js';
 import { dateTimeLabel } from '../../utils/treatmentReport.js';
 
-const STORAGE_PREFIX = 'huong-spa:active-service:';
 const acceptedImageTypes = ['image/png', 'image/jpeg'];
 
 function makeId() {
   return globalThis.crypto?.randomUUID?.() ?? `img-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function dateLabel(date = new Date()) {
-  return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short' }).format(date);
+function dateLabel(value) {
+  if (!value) return '--';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short' }).format(date);
 }
 
-function initialUsage(customer) {
-  return {
-    ...activeServiceUsage,
-    id: `${activeServiceUsage.id}-${customer.id}`,
-    customerId: customer.id,
-    customerName: customer.name,
-    customerPhone: customer.phone,
-    galleryImages: [],
-    deliveryHistory: [],
-    deliveryMilestones: [...activeServiceUsage.deliveryMilestones],
-    sessions: activeServiceUsage.sessions.map((session) => ({
-      ...session,
-      employee: session.employee || '',
-      notes: session.notes || '',
-      techniques: [...activeServiceUsage.techniques],
-      products: activeServiceUsage.products.map((product) => ({ ...product })),
-      beforeImages: [...(session.beforeImages ?? [])],
-      afterImages: [...(session.afterImages ?? [])],
-    })),
-  };
-}
-
-function loadUsage(customer) {
-  const defaults = initialUsage(customer);
-  try {
-    const saved = JSON.parse(window.localStorage.getItem(`${STORAGE_PREFIX}${customer.id}`) || 'null');
-    if (!saved) return defaults;
-    return {
-      ...defaults,
-      ...saved,
-      customerId: customer.id,
-      customerName: customer.name,
-      customerPhone: customer.phone,
-      galleryImages: Array.isArray(saved.galleryImages) ? saved.galleryImages : [],
-      deliveryHistory: Array.isArray(saved.deliveryHistory) ? saved.deliveryHistory : [],
-      deliveryMilestones: Array.isArray(saved.deliveryMilestones) ? saved.deliveryMilestones : defaults.deliveryMilestones,
-      sessions: defaults.sessions.map((session) => {
-        const savedSession = saved.sessions?.find((item) => item.number === session.number);
-        return {
-          ...session,
-          ...(savedSession ?? {}),
-          techniques: Array.isArray(savedSession?.techniques) && savedSession.techniques.length ? savedSession.techniques : session.techniques,
-          products: Array.isArray(savedSession?.products) && savedSession.products.length ? savedSession.products : session.products,
-          beforeImages: Array.isArray(savedSession?.beforeImages) ? savedSession.beforeImages : [],
-          afterImages: Array.isArray(savedSession?.afterImages) ? savedSession.afterImages : [],
-        };
-      }),
-    };
-  } catch {
-    return defaults;
+function parseProducts(value) {
+  if (!value) return [];
+  let parsed = value;
+  if (typeof parsed === 'string') {
+    try { parsed = JSON.parse(parsed); } catch { return [{ name: parsed, amount: '—' }]; }
   }
+  const rows = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.products) ? parsed.products : [];
+  return rows.map((product) => ({
+    name: product.name ?? product.tenMyPham ?? product.productName ?? 'Mỹ phẩm',
+    amount: product.amount ?? product.dinhLuong ?? product.quantity ?? '—',
+  }));
+}
+
+function normalizePackage(record, customer) {
+  const sessions = (record.sessions ?? []).map((session, index) => ({
+    id: session.id,
+    number: index + 1,
+    name: session.name || `Buổi ${index + 1}`,
+    status: session.status || 'Chưa thực hiện',
+    customerConfirmation: session.customerConfirmation || 'Chưa xác nhận',
+    date: dateLabel(session.performedAt),
+    duration: Number(session.durationMinutes) || 0,
+    employee: session.staffName || '',
+    result: session.result || '',
+    notes: session.note || '',
+    techniques: session.technique ? [session.technique] : [],
+    products: parseProducts(session.cosmeticsUsage),
+    beforeImages: [],
+    afterImages: session.image ? [{ id: `sql-${session.id}`, name: 'Ảnh tình trạng', dataUrl: session.image, persisted: true }] : [],
+  }));
+  return {
+    id: record.id,
+    customerId: record.customerId || customer.id,
+    customerName: record.customerName || customer.name,
+    customerPhone: record.customerPhone || customer.phone,
+    name: record.serviceName || 'Dịch vụ',
+    purchaseOrder: record.id,
+    price: Number(record.purchasePrice) || 0,
+    startDate: dateLabel(record.purchaseDate),
+    expectedEndDate: record.endedAt ? dateLabel(record.endedAt) : '',
+    purchaseDate: dateLabel(record.purchaseDate),
+    paymentStatus: record.paymentStatus || '—',
+    status: record.completionStatus || 'Chưa thực hiện',
+    totalSessions: Number(record.totalSessions) || sessions.length,
+    sessions,
+  };
 }
 
 function completedSessionCount(sessions) {
@@ -123,45 +120,56 @@ function compressImage(file) {
   });
 }
 
-export default function CustomerActiveServicePage({ customer, onBack, fallbackPath }) {
-  const [usage, setUsage] = useState(() => loadUsage(customer));
+export default function CustomerActiveServicePage({ customer, packageId: requestedPackageId, onBack, fallbackPath }) {
+  const packageId = requestedPackageId || customer.activeServices?.[0]?.id;
+  const [usage, setUsage] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [selectedSessionNumber, setSelectedSessionNumber] = useState(null);
   const [lightbox, setLightbox] = useState(null);
   const [reportOpen, setReportOpen] = useState(false);
-  const [startErrorOpen, setStartErrorOpen] = useState(false);
   const [resultMissingOpen, setResultMissingOpen] = useState(false);
   const [resultDraft, setResultDraft] = useState('');
   const [editingResult, setEditingResult] = useState(false);
   const [notice, setNotice] = useState('');
-  const [storageError, setStorageError] = useState(false);
   const sessionInputRefs = useRef({});
 
-  const storageKey = `${STORAGE_PREFIX}${customer.id}`;
-  const selectedSession = usage.sessions.find((session) => session.number === selectedSessionNumber) ?? null;
-  const completedCount = completedSessionCount(usage.sessions);
-  const remainingCount = Math.max(0, usage.totalSessions - completedCount);
-  const serviceStatus = completedCount >= usage.totalSessions ? 'Hoàn thành' : usage.status;
+  const selectedSession = usage?.sessions.find((session) => session.number === selectedSessionNumber) ?? null;
+  const completedCount = completedSessionCount(usage?.sessions ?? []);
+  const remainingCount = Math.max(0, (usage?.totalSessions ?? 0) - completedCount);
+  const serviceStatus = completedCount >= (usage?.totalSessions ?? 0) ? 'Hoàn thành' : usage?.status;
   const lightboxImages = useMemo(() => {
     if (!lightbox) return [];
-    const session = usage.sessions.find((item) => item.number === lightbox.sessionNumber);
+    const session = usage?.sessions.find((item) => item.number === lightbox.sessionNumber);
     return session?.[lightbox.side] ?? [];
-  }, [lightbox, usage.sessions]);
+  }, [lightbox, usage?.sessions]);
   const activeLightboxImage = lightboxImages[lightbox?.index ?? -1] ?? null;
 
   useEffect(() => {
-    setUsage(loadUsage(customer));
+    let active = true;
+    setLoading(true);
+    setLoadError('');
+    setUsage(null);
     setSelectedSessionNumber(null);
     setLightbox(null);
-  }, [customer.id]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(usage));
-      setStorageError(false);
-    } catch {
-      setStorageError(true);
+    if (!packageId) {
+      setLoadError('Khách hàng chưa có mã liệu trình để tải.');
+      setLoading(false);
+      return () => { active = false; };
     }
-  }, [storageKey, usage]);
+    apiRequest(`/api/service-packages/${encodeURIComponent(packageId)}`)
+      .then((record) => { if (active) setUsage(normalizePackage(record, customer)); })
+      .catch((error) => { if (active) setLoadError(error.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [customer, packageId]);
+
+  const refreshUsage = async () => {
+    const record = await apiRequest(`/api/service-packages/${encodeURIComponent(packageId)}`);
+    const next = normalizePackage(record, customer);
+    setUsage(next);
+    return next;
+  };
 
   const updateSession = (sessionNumber, updates) => setUsage((current) => ({
     ...current,
@@ -176,27 +184,29 @@ export default function CustomerActiveServicePage({ customer, onBack, fallbackPa
     setEditingResult(false);
   };
 
-  const startSession = () => {
+  const startSession = async () => {
     if (!selectedSession) return;
-    const earlierSessionIsActive = usage.sessions.some((session) => (
-      session.number < selectedSession.number
-      && !['Đã hoàn thành', 'Chờ xác nhận'].includes(session.status)
-    ));
-    if (earlierSessionIsActive) {
-      setStartErrorOpen(true);
-      return;
+    try {
+      await apiRequest(`/api/service-packages/${encodeURIComponent(packageId)}/sessions/${encodeURIComponent(selectedSession.id)}/start`, { method: 'POST', body: {} });
+      await refreshUsage();
+      setNotice('Đã bắt đầu buổi và lưu trạng thái vào SQL.');
+    } catch (error) {
+      setNotice(error.message || 'Không thể bắt đầu buổi.');
     }
-    updateSession(selectedSession.number, { status: 'Đang thực hiện', date: dateLabel() });
   };
 
-  const completeSession = () => {
+  const completeSession = async () => {
     if (!selectedSession) return;
     if (!resultDraft.trim()) { setResultMissingOpen(true); return; }
-    updateSession(selectedSession.number, {
-      status: 'Đã hoàn thành',
-      result: resultDraft.trim(),
-      date: selectedSession.date === '--' ? dateLabel() : selectedSession.date,
-    });
+    try {
+      await apiRequest(`/api/service-packages/${encodeURIComponent(packageId)}/sessions/${encodeURIComponent(selectedSession.id)}/complete`, {
+        method: 'POST', body: { result: resultDraft.trim() },
+      });
+      await refreshUsage();
+      setNotice('Đã lưu kết quả và trạng thái buổi vào SQL.');
+    } catch (error) {
+      setNotice(error.message || 'Không thể hoàn tất buổi.');
+    }
   };
 
   const openLightbox = (index, sessionNumber, side) => setLightbox({ index, sessionNumber, side });
@@ -223,6 +233,22 @@ export default function CustomerActiveServicePage({ customer, onBack, fallbackPa
     if (!files?.length) return;
     try {
       const images = await buildImages(files);
+      const existingSession = usage.sessions.find((session) => session.number === sessionNumber);
+      const persistedImage = existingSession?.afterImages.find((image) => image.persisted);
+      const shouldPersist = side === 'afterImages' && (replaceId === persistedImage?.id || (!replaceId && !persistedImage));
+      let persistedPath = null;
+      if (shouldPersist) {
+        const image = images[0];
+        const uploaded = await apiRequest('/api/files/images', {
+          method: 'POST',
+          body: { mimeType: 'image/jpeg', base64: image.dataUrl, originalName: image.name },
+        });
+        persistedPath = uploaded.path;
+        await apiRequest(`/api/service-packages/${encodeURIComponent(packageId)}/sessions/${encodeURIComponent(existingSession.id)}`, {
+          method: 'PUT', body: { image: persistedPath },
+        });
+        images[0] = { ...image, id: `sql-${existingSession.id}`, dataUrl: persistedPath, persisted: true };
+      }
       setUsage((current) => ({
         ...current,
         sessions: current.sessions.map((session) => {
@@ -236,25 +262,47 @@ export default function CustomerActiveServicePage({ customer, onBack, fallbackPa
           };
         }),
       }));
-      setNotice(replaceId ? `Đã cập nhật ảnh của Buổi ${sessionNumber}.` : `${images.length} ảnh đã được lưu cho Buổi ${sessionNumber}.`);
+      setNotice(persistedPath
+        ? `Đã lưu một ảnh sau điều trị của Buổi ${sessionNumber} vào SQL. Ảnh bổ sung và ảnh trước điều trị chỉ hiển thị trong phiên hiện tại.`
+        : `Ảnh đã thêm trong phiên hiện tại. Cơ sở dữ liệu hiện chỉ lưu một ảnh sau điều trị cho mỗi buổi.`);
     } catch (error) {
       setNotice(error.message || 'Không thể lưu hình ảnh.');
     }
   };
 
-  const removeSessionImage = (sessionNumber, side, imageId) => {
+  const removeSessionImage = async (sessionNumber, side, imageId) => {
+    const session = usage.sessions.find((item) => item.number === sessionNumber);
+    const image = session?.[side].find((item) => item.id === imageId);
+    try {
+      if (image?.persisted) {
+        await apiRequest(`/api/service-packages/${encodeURIComponent(packageId)}/sessions/${encodeURIComponent(session.id)}`, {
+          method: 'PUT', body: { image: null },
+        });
+      }
     setUsage((current) => ({
       ...current,
       sessions: current.sessions.map((session) => session.number === sessionNumber
         ? { ...session, [side]: session[side].filter((image) => image.id !== imageId) }
         : session),
     }));
+      setNotice(image?.persisted ? 'Đã xóa ảnh khỏi SQL.' : 'Đã xóa ảnh khỏi phiên hiện tại.');
+    } catch (error) {
+      setNotice(error.message || 'Không thể xóa hình ảnh.');
+    }
   };
 
-  const saveSessionResult = () => {
+  const saveSessionResult = async () => {
     if (!selectedSession) return;
-    updateSession(selectedSession.number, { result: resultDraft.trim() });
-    setEditingResult(false);
+    try {
+      await apiRequest(`/api/service-packages/${encodeURIComponent(packageId)}/sessions/${encodeURIComponent(selectedSession.id)}`, {
+        method: 'PUT', body: { result: resultDraft.trim() },
+      });
+      await refreshUsage();
+      setEditingResult(false);
+      setNotice('Đã lưu kết quả buổi vào SQL.');
+    } catch (error) {
+      setNotice(error.message || 'Không thể lưu kết quả.');
+    }
   };
 
   const showSessionImage = (sessionNumber, side, index) => openLightbox(index, sessionNumber, side);
@@ -311,6 +359,10 @@ export default function CustomerActiveServicePage({ customer, onBack, fallbackPa
       </section>
     );
   };
+
+  if (loading) return <div className="panel data-loading" role="status">Đang tải liệu trình từ cơ sở dữ liệu SQL…</div>;
+  if (loadError) return <div className="panel data-error" role="alert">Không tải được liệu trình từ SQL: {loadError}</div>;
+  if (!usage) return <div className="panel data-error" role="alert">Không tìm thấy dữ liệu liệu trình trong SQL.</div>;
 
   return (
     <div className="page-stack customer-active-service-page">
@@ -373,8 +425,6 @@ export default function CustomerActiveServicePage({ customer, onBack, fallbackPa
       </section>
 
       {notice && <div className="customer-active-service-notice" role="status"><span>{notice}</span><button type="button" aria-label="Đóng thông báo" onClick={() => setNotice('')}><X size={16} /></button></div>}
-      {storageError && <div className="customer-active-service-storage-error" role="alert">Bộ nhớ trình duyệt đã đầy nên thay đổi mới chưa được lưu. Hãy xóa bớt ảnh rồi thử lại.</div>}
-
       <Modal
         open={Boolean(selectedSession)}
         title={selectedSession ? `CHI TIẾT BUỔI ${selectedSession.number}` : ''}
@@ -441,7 +491,6 @@ export default function CustomerActiveServicePage({ customer, onBack, fallbackPa
         </div>}
       </Modal>
 
-      <FeedbackDialog open={startErrorOpen} title="" message="Vui lòng hoàn thành buổi trước theo đúng thứ tự !" onClose={() => setStartErrorOpen(false)} layer={2} />
       <FeedbackDialog open={resultMissingOpen} title="" message="Vui lòng nhập kết quả buổi !" onClose={() => setResultMissingOpen(false)} layer={2} />
 
       <Modal

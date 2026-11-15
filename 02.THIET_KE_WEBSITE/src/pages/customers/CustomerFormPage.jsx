@@ -7,7 +7,8 @@ import Modal from '../../components/ui/Modal.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import SelectField from '../../components/ui/SelectField.jsx';
 import TextField from '../../components/ui/TextField.jsx';
-import { formatCurrency, products } from '../../data/mockData.js';
+import { formatCurrency } from '../../data/mockData.js';
+import { apiList } from '../../api.js';
 
 const emptyCustomer = { name: '', birthday: '', phone: '' };
 
@@ -30,7 +31,14 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave }) {
   const [formError, setFormError] = useState('');
   const [purchaseError, setPurchaseError] = useState('');
   const [purchaseQuantityError, setPurchaseQuantityError] = useState('');
+  const [products, setProducts] = useState([]);
   const { showDialog, notify } = useFeedback();
+
+  useEffect(() => {
+    let active = true;
+    apiList('/api/retail-products').then((rows) => { if (active) setProducts(rows); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     setForm(record
@@ -65,6 +73,9 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave }) {
     const date = toDisplayDate(purchaseForm.date);
     setPurchases((current) => [...current, {
       id: `${product.id}-${Date.now()}`,
+      productId: product.id,
+      quantityValue: quantity,
+      saleDate: purchaseForm.date,
       date,
       product: product.name,
       quantity: `${quantity} ${product.unit ?? 'chai'}`,

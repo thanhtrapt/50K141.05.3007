@@ -47,7 +47,7 @@ export default function ProductFormPage({ record, nextId, categories, onCancel, 
     reader.readAsDataURL(file);
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     if (!form.name.trim()) {
       setFormError('Thông tin chưa hợp lệ, yêu cầu nhập lại');
@@ -61,7 +61,11 @@ export default function ProductFormPage({ record, nextId, categories, onCancel, 
     }
     setFormError('');
     setFieldErrors({});
-    onSave({ ...form, price: Number(form.price), stock: Number(form.stock) });
+    try {
+      await onSave({ ...form, price: Number(form.price), stock: Number(form.stock) });
+    } catch (error) {
+      setFormError(error.message || 'Không thể lưu mỹ phẩm vào cơ sở dữ liệu.');
+    }
   };
 
   return (

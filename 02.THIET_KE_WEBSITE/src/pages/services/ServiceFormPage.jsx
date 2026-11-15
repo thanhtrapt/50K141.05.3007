@@ -6,7 +6,7 @@ import FeedbackDialog from '../../components/ui/FeedbackDialog.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import SelectField from '../../components/ui/SelectField.jsx';
 import TextField from '../../components/ui/TextField.jsx';
-import { products } from '../../data/mockData.js';
+import { apiList } from '../../api.js';
 
 const createSession = () => ({ name: '', minutes: '', technique: '', product: '', amount: '', entries: [] });
 
@@ -25,6 +25,13 @@ export default function ServiceFormPage({ record, nextId, onCancel, onSave }) {
   const [entryErrors, setEntryErrors] = useState({});
   const [cancelOpen, setCancelOpen] = useState(false);
   const [validation, setValidation] = useState(null);
+  const [products, setProducts] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    apiList('/api/cosmetics').then((rows) => { if (active) setProducts(rows); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     setForm(record
@@ -77,7 +84,7 @@ export default function ServiceFormPage({ record, nextId, onCancel, onSave }) {
     setForm((current) => ({ ...current, sessions: Math.max(1, Number(current.sessions || 1) - 1) }));
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     if (!form.name.trim() || !form.price || !form.sessions || !form.result.trim()) {
       setValidation({ title: 'Thông tin chưa hoàn tất', message: 'Yêu cầu nhập lại' });
@@ -87,7 +94,15 @@ export default function ServiceFormPage({ record, nextId, onCancel, onSave }) {
       setValidation({ title: 'Thông tin không hợp lệ', message: 'Yêu cầu nhập lại' });
       return;
     }
-    onSave({ ...form, price: Number(form.price), sessions: Number(form.sessions), sessionDetails });
+    if (sessionDetails.some((session) => !session.entries?.length)) {
+      setValidation({ title: 'Thiếu nội dung buổi', message: 'Hãy thêm ít nhất một kỹ thuật và mỹ phẩm sử dụng cho mỗi buổi.' });
+      return;
+    }
+    try {
+      await onSave({ ...form, price: Number(form.price), sessions: Number(form.sessions), sessionDetails });
+    } catch (error) {
+      setValidation({ title: 'Không thể lưu dịch vụ', message: error.message || 'Vui lòng thử lại.' });
+    }
   };
 
   return (

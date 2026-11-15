@@ -15,8 +15,8 @@ import SelectField from '../../components/ui/SelectField.jsx';
 import StatusBadge from '../../components/ui/StatusBadge.jsx';
 import TextField from '../../components/ui/TextField.jsx';
 import { useFeedback } from '../../components/ui/FeedbackContext.jsx';
-import { apiRequest } from '../../api.js';
-import { formatCurrency, inboundRecords as initialRecords } from '../../data/mockData.js';
+import { apiList, apiRequest } from '../../api.js';
+import { formatCurrency } from '../../data/mockData.js';
 
 let nextLineId = 1;
 const units = ['Chai', 'Lọ', 'Tuýp', 'Hộp', 'Gói'];
@@ -24,15 +24,6 @@ const normalizeProductSearch = (value) => String(value ?? '').normalize('NFD').r
 
 function blankLine() {
   return { id: `inbound-line-${nextLineId++}`, productId: '', productQuery: '', unit: '', price: '', quantity: '', lots: [] };
-}
-
-function initialLotCatalog() {
-  return {
-    MP00000002: [
-      { id: '090926-002', status: 'Còn hạn', manufactureDate: '2026-09-01', expiryDate: '2028-09-01', stock: 0 },
-      { id: '050726-003', status: 'Còn hạn', manufactureDate: '2026-06-01', expiryDate: '2028-06-01', stock: 0 },
-    ],
-  };
 }
 
 function formatDate(value) {
@@ -53,17 +44,19 @@ function initialForm(records) {
     supplier: '',
     paymentStatus: '',
     items: [blankLine()],
-    code: `PN${String(records.length + 1).padStart(8, '0')}`,
+    code: 'Tự động tạo',
   };
 }
 
 export default function InboundPage() {
-  const [records, setRecords] = useState(initialRecords);
+  const [records, setRecords] = useState([]);
+  const [receiptDetail, setReceiptDetail] = useState(null);
   const [products, setProducts] = useState([]);
-  const [lotsByProduct, setLotsByProduct] = useState(initialLotCatalog);
+  const [lotsByProduct, setLotsByProduct] = useState({});
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
-  const [form, setForm] = useState(() => initialForm(initialRecords));
+  const [form, setForm] = useState(() => initialForm([]));
   const [formError, setFormError] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [openProductId, setOpenProductId] = useState(null);
@@ -88,15 +81,14 @@ export default function InboundPage() {
   const routePart = location.pathname.replace(/^\/phieu-nhap-kho\/?/, '').split('/').filter(Boolean)[0];
   const isCreate = routePart === 'tao-moi';
   const receiptId = routePart && !isCreate ? routePart : null;
-  const selectedReceipt = records.find((record) => record.id === receiptId);
+  const selectedReceipt = receiptDetail?.id === receiptId ? receiptDetail : records.find((record) => record.id === receiptId);
   useEffect(() => {
-    if (!isCreate) return;
     let active = true;
-    apiRequest('/api/cosmetics?limit=100')
-      .then((result) => {
+    Promise.all([apiList('/api/stock-receipts'), apiList('/api/cosmetics'), apiList('/api/lots')])
+      .then(([receipts, cosmetics, lots]) => {
         if (!active) return;
-        const rows = Array.isArray(result) ? result : result?.data;
-        if (Array.isArray(rows)) setProducts(rows.map((product) => ({
+        setRecords(receipts.map((record) => ({ ...record, date: formatDate(String(record.receiptDate).slice(0, 10)) })));
+        setProducts(cosmetics.map((product) => ({
           id: String(product.id ?? product.maMyPham ?? '').trim(),
           name: product.name ?? product.tenMyPham ?? '',
           image: product.image ?? product.hinhAnh ?? '',
@@ -105,10 +97,35 @@ export default function InboundPage() {
           stock: Number(product.stock ?? product.soLuongTonKho ?? 0),
           price: Number(product.salePrice ?? product.giaBan ?? 0),
         })).filter((product) => product.id && product.name));
+        const groupedLots = {};
+        lots.forEach((lot) => {
+          const productLots = groupedLots[lot.cosmeticId] ?? [];
+          productLots.push({ id: lot.id, status: 'Còn hạn', manufactureDate: String(lot.productionDate).slice(0, 10), expiryDate: String(lot.expiryDate).slice(0, 10), stock: Number(lot.stock) });
+          groupedLots[lot.cosmeticId] = productLots;
+        });
+        setLotsByProduct(groupedLots);
       })
-      .catch((error) => console.error('[inbound] Không tải được danh sách mỹ phẩm:', error));
+      .catch((error) => showDialog({ title: 'Không tải được dữ liệu phiếu nhập', message: error.message }))
+      .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [isCreate]);
+  }, [showDialog]);
+
+  useEffect(() => {
+    let active = true;
+    setReceiptDetail(null);
+    if (!receiptId) return () => { active = false; };
+    apiRequest(`/api/stock-receipts/${encodeURIComponent(receiptId)}`)
+      .then((detail) => {
+        if (!active) return;
+        setReceiptDetail({
+          ...detail,
+          date: formatDate(String(detail.receiptDate).slice(0, 10)),
+          items: (detail.items ?? []).map((item) => ({ product: item.cosmeticName, unit: item.unit, price: Number(item.purchasePrice), quantity: Number(item.quantity), lot: item.lotCode, productionDate: item.productionDate, expiryDate: item.expiryDate })),
+        });
+      })
+      .catch((error) => { if (active) showDialog({ title: 'Không tải được chi tiết phiếu nhập', message: error.message }); });
+    return () => { active = false; };
+  }, [receiptId, showDialog]);
   const visibleRecords = useMemo(() => records.filter((item) => item.id.toLowerCase().includes(query.toLowerCase())), [records, query]);
   const pageCount = Math.max(1, Math.ceil(visibleRecords.length / 5));
   const pageRecords = visibleRecords.slice((page - 1) * 5, page * 5);
@@ -195,7 +212,7 @@ export default function InboundPage() {
     event.preventDefault();
     if (!newProductRow || !newProduct.name.trim() || !newProduct.unit) return;
     const id = `MP${String(products.length + 1).padStart(8, '0')}`;
-    const product = { id, name: newProduct.name.trim(), category: '', stock: 0, price: 0, unit: newProduct.unit };
+    const product = { id, name: newProduct.name.trim(), category: '', stock: 0, price: 0, unit: newProduct.unit, temporary: true };
     setProducts((current) => [...current, product]);
     chooseProduct(newProductRow, product);
     setNewProduct({ name: '', unit: '' });
@@ -230,6 +247,7 @@ export default function InboundPage() {
     const currentLots = lotsByProduct[activeLine.productId] ?? [];
     const newLot = {
       id: toLotCode(lotDraft.manufactureDate, currentLots.length + 1),
+      isNew: true,
       status: 'Còn hạn',
       manufactureDate: lotDraft.manufactureDate,
       expiryDate: lotDraft.expiryDate,
@@ -247,7 +265,7 @@ export default function InboundPage() {
     setLotDialogRowId(null);
   };
 
-  const saveReceipt = (event) => {
+  const saveReceipt = async (event) => {
     event.preventDefault();
     setSubmitted(true);
     if (!form.supplier.trim() || !form.date || !form.paymentStatus) {
@@ -263,31 +281,39 @@ export default function InboundPage() {
       setFormError('Vui lòng chọn sản phẩm, nhập số lượng lớn hơn 0 và chọn lô nhập hàng cho từng dòng.');
       return;
     }
-    const nextNumber = String(records.length + 1).padStart(8, '0');
-    const receiptDate = new Date(`${form.date}T00:00:00`);
-    const items = validItems.map((item) => {
-      const product = products.find((candidate) => candidate.id === item.productId);
-      return {
-        product: product?.name ?? item.productQuery,
-        unit: item.unit,
-        price: Number(item.price),
-        quantity: Number(item.quantity),
-        lots: item.lots.map((lot) => lot.id),
-        lot: item.lots.map((lot) => lot.id).join(', '),
-      };
-    });
-    const receipt = {
-      id: `PN${nextNumber}`,
-      date: receiptDate.toLocaleDateString('vi-VN'),
-      total: items.reduce((sum, item) => sum + item.price * item.quantity, 0),
-      creator: form.supplier,
-      paymentStatus: form.paymentStatus,
-      items,
-    };
-    setRecords((current) => [receipt, ...current]);
+    if (validItems.some((item) => item.lots.length !== 1)) {
+      setFormError('Mỗi dòng cần có đúng một lô để hệ thống ghi nhận chính xác số lượng theo từng lô. Hãy tách các lô thành nhiều dòng sản phẩm.');
+      return;
+    }
+    if (validItems.some((item) => products.find((product) => product.id === item.productId)?.temporary)) {
+      setFormError('Sản phẩm mới cần được tạo và lưu ở trang Mỹ phẩm trước khi lập phiếu nhập.');
+      return;
+    }
     setFormError('');
-    showDialog({ tone: 'success', title: 'Tạo phiếu nhập thành công', message: 'Thông tin phiếu nhập đã được lưu.', size: 'medium' });
-    navigate(`/phieu-nhap-kho/${receipt.id}`);
+    try {
+      const saved = await apiRequest('/api/stock-receipts', {
+        method: 'POST',
+        body: {
+          receiptDate: form.date,
+          paymentStatus: form.paymentStatus,
+          items: validItems.map((item) => {
+            const lot = item.lots[0];
+            return {
+              cosmeticId: item.productId,
+              purchasePrice: Number(item.price),
+              quantity: Number(item.quantity),
+              ...(lot.isNew ? { lot: { productionDate: lot.manufactureDate, expiryDate: lot.expiryDate } } : { batchId: lot.id }),
+            };
+          }),
+        },
+      });
+      const rows = await apiList('/api/stock-receipts');
+      setRecords(rows.map((record) => ({ ...record, date: formatDate(String(record.receiptDate).slice(0, 10)) })));
+      showDialog({ tone: 'success', title: 'Tạo phiếu nhập thành công', message: 'Phiếu nhập, lô hàng và số lượng tồn đã được lưu vào SQL.', size: 'medium' });
+      navigate(`/phieu-nhap-kho/${saved.id}`);
+    } catch (error) {
+      setFormError(error.message || 'Không thể lưu phiếu nhập kho vào SQL.');
+    }
   };
 
   const columns = [
@@ -296,6 +322,8 @@ export default function InboundPage() {
     { key: 'date', label: 'Ngày nhập', width: '30.67%', align: 'center' },
     { key: 'total', label: 'Tổng tiền', width: '30.66%', align: 'right', nowrap: true, render: (record) => formatCurrency(record.total) },
   ];
+
+  if (loading) return <div className="panel data-loading" role="status">Đang tải phiếu nhập kho từ SQL…</div>;
 
   if (isCreate) {
     return (
@@ -310,7 +338,7 @@ export default function InboundPage() {
             <div className="form-grid inventory-meta-grid">
               <TextField label="Mã phiếu nhập" value={form.code} readOnly />
               <TextField label="Người nhập *" value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} required />
-              <TextField label="Ngày nhập *" type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value, code: `PN${String(records.length + 1).padStart(8, '0')}` })} required />
+              <TextField label="Ngày nhập *" type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value, code: 'Tự động tạo' })} required />
               <SelectField label="Trạng thái thanh toán *" value={form.paymentStatus} onChange={(event) => setForm({ ...form, paymentStatus: event.target.value })} options={['Chưa thanh toán', 'Đã thanh toán']} required />
             </div>
             <h2 className="inventory-section-title">Danh sách sản phẩm</h2>

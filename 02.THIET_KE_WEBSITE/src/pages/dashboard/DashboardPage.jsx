@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertTriangle, CircleAlert, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import Panel from '../../components/ui/Panel.jsx';
+import { apiRequest } from '../../api.js';
 
 const alertGroups = [
   {
@@ -27,14 +28,33 @@ const alertGroups = [
 
 export default function DashboardPage() {
   const [dismissed, setDismissed] = useState([]);
+  const [alertSummary, setAlertSummary] = useState(null);
+  const [summaryError, setSummaryError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    apiRequest('/api/alerts')
+      .then((result) => { if (active) setAlertSummary(result.summary ?? null); })
+      .catch((error) => { if (active) setSummaryError(error.message); });
+    return () => { active = false; };
+  }, []);
 
   const dismiss = (id) => setDismissed((current) => [...current, id]);
 
   return (
     <div className="page-stack dashboard-page">
       <PageHeader title="TRANG CHỦ" />
+      {summaryError && <div className="panel data-error" role="alert">Không tải được tổng quan kho: {summaryError}</div>}
       {alertGroups.map((group) => {
         const destination = group.id === 'stock' ? '/canh-bao/ton-kho' : '/canh-bao/han-su-dung';
+        const actualCounts = group.id === 'stock'
+          ? [alertSummary?.lowStock?.out ?? 0, alertSummary?.lowStock?.soon ?? 0]
+          : [alertSummary?.expiry?.expired ?? 0, alertSummary?.expiry?.soon ?? 0];
+        const actualRows = group.rows.map((row, index) => ({
+          ...row,
+          count: `${actualCounts[index]} mặt hàng`,
+          detail: actualCounts[index] ? 'Được tổng hợp từ dữ liệu kho SQL' : 'Không có mặt hàng cần cảnh báo',
+        }));
         return (
           <div className="dashboard-alert-group" key={group.id}>
           {!dismissed.includes(group.id) && (
@@ -53,7 +73,7 @@ export default function DashboardPage() {
             className="dashboard-panel"
           >
             <div className="dashboard-summary-grid">
-              {group.rows.map((row) => (
+              {actualRows.map((row) => (
                 <Link className={`summary-card summary-card--${row.tone}`} to={destination} key={row.label}>
                   <span className="summary-card__icon">
                     {row.tone === 'danger'

@@ -4,16 +4,21 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
 import DataTable from '../../components/ui/DataTable.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import { ActionGroup, DeleteButton, EditButton } from '../../components/ui/ActionButtons.jsx';
+import { formatCurrency } from '../../data/mockData.js';
 
 export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete, serviceUsagePath, fallbackPath = '/khach-hang' }) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const purchases = customer.purchases ?? [{
-    date: '—',
-    product: 'Serum phục hồi B5',
-    quantity: '2 chai',
-    price: '—',
-    total: '—',
-  }];
+  const purchases = (customer.purchasedProducts ?? []).map((item) => ({
+    id: item.saleId,
+    date: item.purchaseDate ? new Date(item.purchaseDate).toLocaleDateString('vi-VN') : '—',
+    product: item.cosmeticName,
+    quantity: item.quantity,
+    price: formatCurrency(item.unitPrice),
+    total: formatCurrency(item.lineTotal),
+  }));
+  const activeServices = customer.activeServices ?? [];
+  const serviceHistory = customer.serviceHistory ?? [];
+  const visits = serviceHistory.reduce((total, item) => total + Number(item.sessionsCompleted || 0), 0);
 
   return (
     <div className="page-stack customer-detail-page">
@@ -22,7 +27,7 @@ export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete,
         fallbackPath={fallbackPath}
         onBack={onBack}
       />
-      {customer.blacklisted && <div className="customer-detail__alert" role="status">Khách hàng thuộc danh sách đen!</div>}
+      {customer.isBlacklisted && <div className="customer-detail__alert" role="status">Khách hàng thuộc danh sách đen!</div>}
 
       <section className="panel customer-profile-panel">
         <div className="customer-profile-panel__heading">
@@ -37,9 +42,9 @@ export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete,
           </ActionGroup>
         </div>
         <dl className="customer-profile-facts">
-          <div><dt>Ngày sinh</dt><dd>{customer.birthday || '—'}</dd></div>
+          <div><dt>Ngày sinh</dt><dd>{customer.dateOfBirth?.split('-').reverse().join('/') || customer.birthday || '—'}</dd></div>
           <div><dt>Số điện thoại</dt><dd>{customer.phone}</dd></div>
-          <div><dt>Số lần đến</dt><dd>{customer.visits} lần</dd></div>
+          <div><dt>Số buổi đã thực hiện</dt><dd>{visits} buổi</dd></div>
         </dl>
       </section>
 
@@ -47,13 +52,15 @@ export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete,
         <section className="panel customer-detail__section">
           <h2>Dịch vụ đang sử dụng</h2>
           <div className="customer-detail__rows">
-            <p><span>VI KIM SINH HỌC</span><Link className="text-link" to={serviceUsagePath}>Chi tiết</Link></p>
+            {activeServices.length ? activeServices.map((service) => (
+              <p key={service.id}><span>{service.serviceName}</span><Link className="text-link" to={`${serviceUsagePath}?packageId=${encodeURIComponent(service.id)}`}>Chi tiết</Link></p>
+            )) : <p className="customer-detail__empty">Chưa có dịch vụ đang sử dụng</p>}
           </div>
         </section>
 
         <section className="panel customer-detail__section">
           <h2>Dịch vụ phát sinh</h2>
-          <p className="customer-detail__empty">Chưa có dịch vụ phát sinh</p>
+          <p className="customer-detail__empty">{serviceHistory.length ? `${serviceHistory.length} liệu trình đã ghi nhận` : 'Chưa có dịch vụ phát sinh'}</p>
         </section>
       </div>
 
@@ -75,9 +82,11 @@ export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete,
       <section className="panel customer-detail__section">
         <div className="customer-detail__section-heading">
           <h2>Lịch sử dịch vụ</h2>
-          <Link className="text-link" to="/dich-vu/DV00000002">Xem chi tiết ›</Link>
+          <span>{serviceHistory.length} liệu trình</span>
         </div>
-        <p>Buổi 2 · Đã hoàn thành · 21/10/2026</p>
+        {serviceHistory.length ? serviceHistory.map((service) => (
+          <p key={service.id}>{service.serviceName} · {service.sessionsCompleted}/{service.totalSessions} buổi · {service.completionStatus}</p>
+        )) : <p>Chưa có lịch sử dịch vụ.</p>}
       </section>
 
       <ConfirmDialog open={deleteConfirmOpen} title="Xóa hồ sơ khách hàng" message="Bạn có chắc chắn muốn xóa hồ sơ khách hàng này?" onCancel={() => setDeleteConfirmOpen(false)} onConfirm={onDelete} confirmLabel="Xóa" cancelLabel="Hủy" danger />

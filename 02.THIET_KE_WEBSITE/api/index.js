@@ -31,6 +31,7 @@ import route28 from './_routes/reviews/index.js';
 import route29 from './_routes/service-packages/[packageId].js';
 import route30 from './_routes/service-packages/[packageId]/sessions/[sessionId]/complete.js';
 import route31 from './_routes/service-packages/[packageId]/sessions/[sessionId]/start.js';
+import route44 from './_routes/service-packages/[packageId]/sessions/[sessionId]/index.js';
 import route32 from './_routes/services/[id]/index.js';
 import route33 from './_routes/services/index.js';
 import route34 from './_routes/stock-issues/[id].js';
@@ -74,6 +75,7 @@ const routes = [  route0,
   route29,
   route30,
   route31,
+  route44,
   route32,
   route33,
   route34,

@@ -226,7 +226,7 @@ export async function getServicePackage(id) {
 async function packageAndSession(transaction,packageId,sessionId) {
   const result=await requestFor(transaction).input('package',dbTypes.Char(10),packageId).input('session',dbTypes.Char(10),sessionId).query(`SELECT d.maDonMua AS "maDonMua",d.trangThaiHoanThanh AS "trangThaiHoanThanh",d.maKhachHang AS "maKhachHang",
     k.hoTen AS customerName,k.soDienThoai AS customerPhone,
-    s.tenDV AS serviceName,c.maCT_DonMua AS "maCT_DonMua",c.trangThaiThucHien AS "trangThaiThucHien",c.xacNhanKH AS "xacNhanKH",c.ghiChu AS "ghiChu",c.maCT_DichVu AS "maCT_DichVu",
+    s.tenDV AS serviceName,c.maCT_DonMua AS "maCT_DonMua",c.trangThaiThucHien AS "trangThaiThucHien",c.xacNhanKH AS "xacNhanKH",c.ketQua AS "ketQua",c.hinhAnh AS "image",c.ghiChu AS "ghiChu",c.maCT_DichVu AS "maCT_DichVu",
     COALESCE(c.tenBuoi,t.tenBuoi) AS sessionName,t.thoiGianThucHien AS durationMinutes
     FROM dbo.DonMuaDV d WITH (UPDLOCK,HOLDLOCK) JOIN dbo.CT_DonMua c WITH (UPDLOCK,HOLDLOCK) ON c.maDonMua=d.maDonMua
     JOIN dbo.KhachHang k ON k.maKhachHang=d.maKhachHang JOIN dbo.DichVu s ON s.maDichVu=d.maDichVu LEFT JOIN dbo.CT_DichVu t ON t.maCT_DichVu=c.maCT_DichVu
@@ -266,18 +266,42 @@ export async function completePackageSession(packageId,sessionId,body,user) {
   return inTransaction(async transaction=>{
     const row=await packageAndSession(transaction,packageId,sessionId);
     if(row.trangThaiThucHien!=='Đang thực hiện')throw error(409,'SESSION_STATE_INVALID','Buổi dịch vụ không ở trạng thái có thể hoàn thành.');
+    const storedImage=image??row.image??null;
     await requestFor(transaction).input('id',dbTypes.Char(10),sessionId).input('package',dbTypes.Char(10),packageId)
-      .input('result',dbTypes.NVarChar(255),result).input('image',dbTypes.NVarChar(255),image).input('note',dbTypes.NVarChar(255),note)
+      .input('result',dbTypes.NVarChar(255),result).input('image',dbTypes.NVarChar(255),storedImage).input('note',dbTypes.NVarChar(255),note)
       .query(`UPDATE dbo.CT_DonMua SET trangThaiThucHien=N'Chờ xác nhận',xacNhanKH=N'Chưa xác nhận',ketQua=@result,hinhAnh=@image,ghiChu=@note,ngayThucHien=SYSDATETIME()
         WHERE maCT_DonMua=@id AND maDonMua=@package`);
     await insertAudit({transaction,user,action:'Hoàn thành buổi dịch vụ, chờ khách xác nhận',entity:'CT_DonMua',entityId:sessionId,
-      before:{trangThaiThucHien:row.trangThaiThucHien},after:{trangThaiThucHien:'Chờ xác nhận',ketQua:result,hinhAnh:image}});
+      before:{trangThaiThucHien:row.trangThaiThucHien},after:{trangThaiThucHien:'Chờ xác nhận',ketQua:result,hinhAnh:storedImage}});
     const confirmationUrl=createConfirmationUrl(packageId,sessionId);
     await enqueueNotification(transaction,{event:'SESSION_CONFIRM_REQUEST',recipient:row.customerPhone,sessionId,
       payload:{packageId:packageId.trim(),sessionId:sessionId.trim(),customerId:row.maKhachHang.trim(),customerName:row.customerName,
-        phone:row.customerPhone,serviceName:row.serviceName,sessionName:row.sessionName||'Buổi dịch vụ',result,image,
-        imageUrl:image&&image.startsWith('/')?`${config.publicBaseUrl}${image}`:image,confirmationUrl}});
+        phone:row.customerPhone,serviceName:row.serviceName,sessionName:row.sessionName||'Buổi dịch vụ',result,image:storedImage,
+        imageUrl:storedImage&&storedImage.startsWith('/')?`${config.publicBaseUrl}${storedImage}`:storedImage,confirmationUrl}});
     return {packageId:packageId.trim(),sessionId:sessionId.trim(),status:'Chờ xác nhận',customerConfirmation:'Chưa xác nhận',message:'Cập nhật buổi dịch vụ thành công!'};
+  });
+}
+
+export async function updatePackageSessionResult(packageId,sessionId,body,user) {
+  if(!body||typeof body!=='object'||Array.isArray(body))body={};
+  const hasResult=Object.hasOwn(body,'result')||Object.hasOwn(body,'ketQua');
+  const hasImage=Object.hasOwn(body,'image')||Object.hasOwn(body,'hinhAnh');
+  if(!hasResult&&!hasImage)throw badRequest('Không có dữ liệu cần cập nhật.');
+  const result=String(body.result??body.ketQua??'').trim();
+  const image=body.image??body.hinhAnh??null;
+  if(hasResult&&result.length>255)throw badRequest('Kết quả buổi không được vượt quá 255 ký tự.',[{field:'result',message:'Tối đa 255 ký tự'}]);
+  if(hasImage&&image!==null&&(typeof image!=='string'||image.length>255))throw badRequest('Đường dẫn ảnh không hợp lệ.',[{field:'image',message:'Đường dẫn ảnh tối đa 255 ký tự'}]);
+  return inTransaction(async transaction=>{
+    const row=await packageAndSession(transaction,packageId,sessionId);
+    const request=requestFor(transaction).input('id',dbTypes.Char(10),sessionId).input('package',dbTypes.Char(10),packageId);
+    const assignments=[];
+    if(hasResult){request.input('result',dbTypes.NVarChar(255),result||null);assignments.push('ketQua=@result');}
+    if(hasImage){request.input('image',dbTypes.NVarChar(255),image);assignments.push('hinhAnh=@image');}
+    await request.query(`UPDATE dbo.CT_DonMua SET ${assignments.join(',')} WHERE maCT_DonMua=@id AND maDonMua=@package`);
+    await insertAudit({transaction,user,action:'Cập nhật kết quả buổi dịch vụ',entity:'CT_DonMua',entityId:sessionId,
+      before:{...(hasResult?{ketQua:row.ketQua??null}:{}),...(hasImage?{hinhAnh:row.image??null}:{})},
+      after:{...(hasResult?{ketQua:result||null}:{}),...(hasImage?{hinhAnh:image}:{})}});
+    return {packageId:packageId.trim(),sessionId:sessionId.trim(),...(hasResult?{result}:{}),...(hasImage?{image}:{}),message:'Đã lưu dữ liệu buổi dịch vụ'};
   });
 }
 
@@ -342,6 +366,9 @@ export async function createRetailSale(customerId,body,user) {
     seen.add(productId);prepared.push({productId,count});
   }
   if(errors.length)throw badRequest('Thông tin bán lẻ chưa hợp lệ.',errors);
+  const soldAtValue=body.soldAt??body.purchaseDate;
+  const soldAt=soldAtValue?new Date(soldAtValue):new Date();
+  if(Number.isNaN(soldAt.valueOf()))throw badRequest('Ngày mua sản phẩm không hợp lệ.',[{field:'soldAt',message:'Ngày mua sản phẩm không hợp lệ'}]);
   return inTransaction(async transaction=>{
     await findCustomer(customerId,transaction);
     const plans=[];let total=0;
@@ -362,7 +389,7 @@ export async function createRetailSale(customerId,body,user) {
       }
       plans.push({productId:item.productId,productName:product.tenMyPham,unit:product.donViTinh,price,quantity:item.count,lineTotal,allocation});
     }
-    const saleId=await nextCode('PNB',transaction);const soldAt=new Date();
+    const saleId=await nextCode('PNB',transaction);
     await requestFor(transaction).input('id',dbTypes.Char(10),saleId).input('date',dbTypes.DateTime2,soldAt).input('total',dbTypes.Money,total)
       .input('account',dbTypes.Char(10),user.id).input('customer',dbTypes.Char(10),customerId)
       .query('INSERT INTO dbo.DonGhiNhanBan(maDon,ngayMua,tongTien,maTK,maKhachHang) VALUES(@id,@date,@total,@account,@customer)');

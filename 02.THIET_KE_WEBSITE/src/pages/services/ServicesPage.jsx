@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Button from '../../components/ui/Button.jsx';
@@ -9,7 +9,8 @@ import PageHeader from '../../components/ui/PageHeader.jsx';
 import PageListToolbar from '../../components/ui/PageListToolbar.jsx';
 import Pagination from '../../components/ui/Pagination.jsx';
 import SearchBox from '../../components/ui/SearchBox.jsx';
-import { formatCurrency, services as initialServices } from '../../data/mockData.js';
+import { formatCurrency } from '../../data/mockData.js';
+import { apiList, apiRequest } from '../../api.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import ForbiddenPage from '../ForbiddenPage.jsx';
 import ServiceDetailPage from './ServiceDetailPage.jsx';
@@ -22,12 +23,37 @@ export default function ServicesPage() {
   const { can } = useAuth();
   // STAFF chỉ được xem dịch vụ; chỉ OWNER được thêm, sửa, xóa.
   const canManageServices = can('services:write');
-  const [items, setItems] = useState(initialServices);
+  const [items, setItems] = useState([]);
+  const [selectedDetail, setSelectedDetail] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { showDialog } = useFeedback();
+
+  const normalizeService = (service) => ({
+    ...service,
+    sessions: Number(service.totalSessions ?? service.sessions ?? 0),
+    sessionDetails: (service.sessions ?? service.sessionDetails ?? []).map((session) => ({
+      ...session,
+      minutes: String(session.durationMinutes ?? session.minutes ?? ''),
+      entries: session.entries ?? (session.technique || session.cosmeticsUsage ? [{
+        technique: session.technique || '', product: session.cosmeticsUsage || '', amount: '',
+      }] : []),
+    })),
+  });
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    apiList('/api/services')
+      .then((rows) => { if (active) setItems(rows.map(normalizeService)); })
+      .catch((error) => { if (active) setLoadError(error.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   const routeParts = pathname.slice(basePath.length).split('/').filter(Boolean);
   const isCreate = routeParts[0] === 'tao-moi';
@@ -36,7 +62,17 @@ export default function ServicesPage() {
   const sessionNumber = routeParts[1] === 'buoi' ? Number(routeParts[2]) : null;
   const record = items.find((service) => service.id === editingId);
   const selected = items.find((service) => service.id === serviceId);
-  const nextId = `DV${String(items.length + 1).padStart(8, '0')}`;
+  const nextId = 'Tự động tạo';
+
+  useEffect(() => {
+    let active = true;
+    setSelectedDetail(null);
+    if (!serviceId) return () => { active = false; };
+    apiRequest(`/api/services/${encodeURIComponent(serviceId)}`)
+      .then((service) => { if (active) setSelectedDetail(normalizeService(service)); })
+      .catch((error) => { if (active) setLoadError(error.message); });
+    return () => { active = false; };
+  }, [serviceId]);
 
   const filtered = useMemo(
     () => items.filter((service) => `${service.id} ${service.name}`.toLowerCase().includes(query.toLowerCase())),
@@ -45,25 +81,42 @@ export default function ServicesPage() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / 7));
   const pageItems = filtered.slice((page - 1) * 7, page * 7);
 
-  const saveService = (form) => {
-    if (editingId) {
-      setItems((current) => current.map((service) => service.id === editingId ? { ...service, ...form, id: editingId } : service));
-      showDialog({ tone: 'success', title: 'Cập nhật thành công', message: 'Thông tin dịch vụ sau cập nhật đã được lưu' });
-      navigate(`${basePath}/${editingId}`);
-      return;
+  const saveService = async (form) => {
+    const body = {
+      name: form.name,
+      price: Number(form.price),
+      totalSessions: Number(form.sessions),
+      sessions: form.sessionDetails.map((session) => ({
+        name: session.name,
+        durationMinutes: Number(session.minutes),
+        technique: session.entries.map((entry) => entry.technique).filter(Boolean).join('; ') || session.technique,
+        cosmeticsUsage: session.entries.map((entry) => `${entry.product}${entry.amount ? ` (${entry.amount})` : ''}`).filter(Boolean).join('; '),
+      })),
+    };
+    const saved = editingId
+      ? await apiRequest(`/api/services/${encodeURIComponent(editingId)}`, { method: 'PUT', body })
+      : await apiRequest('/api/services', { method: 'POST', body });
+    setItems((current) => editingId
+      ? current.map((service) => service.id === editingId ? normalizeService(saved) : service)
+      : [...current, normalizeService(saved)]);
+    showDialog({ tone: 'success', title: editingId ? 'Cập nhật thành công' : 'Tạo thành công', message: 'Dữ liệu đã được lưu vào cơ sở dữ liệu SQL.' });
+    navigate(editingId ? `${basePath}/${editingId}` : basePath);
+    return saved;
+  };
+
+  const deleteService = async () => {
+    try {
+      await apiRequest(`/api/services/${encodeURIComponent(serviceId)}`, { method: 'DELETE' });
+      setItems((current) => current.filter((service) => service.id !== serviceId));
+      showDialog({ tone: 'success', title: 'Xóa thành công' });
+      navigate(basePath, { replace: true });
+    } catch (error) {
+      showDialog({ title: 'Không thể xóa dịch vụ', message: error.message });
     }
-
-    const createdService = { ...form, id: nextId };
-    setItems((current) => [...current, createdService]);
-    showDialog({ tone: 'success', title: 'Tạo thành công', message: 'Thông tin dịch vụ sau khi đã được lưu' });
-    navigate(basePath);
   };
 
-  const deleteService = () => {
-    setItems((current) => current.filter((service) => service.id !== serviceId));
-    showDialog({ tone: 'success', title: 'Xóa thành công' });
-    navigate(basePath, { replace: true });
-  };
+  if (loading) return <div className="panel data-loading" role="status">Đang tải dịch vụ từ SQL…</div>;
+  if (loadError && !items.length) return <div className="panel data-error" role="alert">Không tải được dữ liệu dịch vụ: {loadError}</div>;
 
   if (isCreate || editingId) {
     if (!canManageServices) {
@@ -89,7 +142,7 @@ export default function ServicesPage() {
     if (sessionNumber) {
       return (
         <ServiceSessionDetailPage
-          service={selected}
+          service={selectedDetail ?? selected}
           sessionNumber={sessionNumber}
           canWrite={canManageServices}
           onBack={() => navigate(`${basePath}/${serviceId}`)}
@@ -100,7 +153,7 @@ export default function ServicesPage() {
     }
     return (
       <ServiceDetailPage
-        service={selected}
+        service={selectedDetail ?? selected}
         canWrite={canManageServices}
         onBack={() => navigate(basePath)}
         onEdit={() => navigate(`${basePath}/${serviceId}/chinh-sua`)}

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CircleAlert, Package, PackageX } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import DataTable from '../../components/ui/DataTable.jsx';
@@ -8,7 +8,7 @@ import PageHeader from '../../components/ui/PageHeader.jsx';
 import Pagination from '../../components/ui/Pagination.jsx';
 import SearchBox from '../../components/ui/SearchBox.jsx';
 import StatusBadge from '../../components/ui/StatusBadge.jsx';
-import { expiryItems, lowStockItems } from '../../data/mockData.js';
+import { apiRequest } from '../../api.js';
 
 function AlertSummary({ icon: Icon, label, value, tone }) {
   return (
@@ -27,8 +27,39 @@ export default function AlertsPage() {
   const isStock = pathname.endsWith('/ton-kho');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [source, setSource] = useState([]);
+  const [summaryData, setSummaryData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [stockWarningOpen, setStockWarningOpen] = useState(isStock && sessionStorage.getItem('huong-spa-stock-warning-seen') !== 'true');
-  const source = isStock ? lowStockItems : expiryItems;
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    const endpoint = isStock ? '/api/alerts/stock' : '/api/alerts/expiry';
+    apiRequest(endpoint)
+      .then((result) => {
+        if (!active) return;
+        setSummaryData(result.summary ?? null);
+        setSource((result.data ?? []).map((item) => {
+          const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
+          const days = expiryDate ? Math.ceil((expiryDate.setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000) : null;
+          return {
+            ...item,
+            id: item.cosmeticId ?? '',
+            lot: item.batchId ?? '',
+            name: item.cosmeticName ?? '',
+            expiry: item.expiryDate ? new Date(item.expiryDate).toLocaleDateString('vi-VN') : '—',
+            days,
+            tone: String(item.status).startsWith('Hết') ? 'danger' : 'warning',
+          };
+        }));
+      })
+      .catch((error) => { if (active) setLoadError(error.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [isStock]);
+
   const rows = useMemo(
     () => source.filter((item) => `${item.id} ${item.name} ${item.lot}`.toLowerCase().includes(query.toLowerCase())),
     [source, query],
@@ -58,13 +89,13 @@ export default function AlertsPage() {
     <div className={`alert-summary-grid${isStock ? '' : ' alert-summary-grid--inside'}`}>
       {isStock ? (
         <>
-          <AlertSummary icon={Package} label="Số mỹ phẩm sắp hết hàng" value={lowStockItems.filter((item) => item.tone === 'warning').length} tone="warning" />
-          <AlertSummary icon={PackageX} label="Số mỹ phẩm hết hàng" value={lowStockItems.filter((item) => item.tone === 'danger').length} tone="danger" />
+          <AlertSummary icon={Package} label="Số mỹ phẩm sắp hết hàng" value={summaryData?.lowStock?.soon ?? 0} tone="warning" />
+          <AlertSummary icon={PackageX} label="Số mỹ phẩm hết hàng" value={summaryData?.lowStock?.out ?? 0} tone="danger" />
         </>
       ) : (
         <>
-          <AlertSummary icon={Package} label="Số lô mỹ phẩm sắp hết hạn sử dụng" value={expiryItems.filter((item) => item.days > 0).length} tone="warning" />
-          <AlertSummary icon={PackageX} label="Số lô mỹ phẩm đã hết hạn sử dụng" value={expiryItems.filter((item) => item.days <= 0).length} tone="danger" />
+          <AlertSummary icon={Package} label="Số lô mỹ phẩm sắp hết hạn sử dụng" value={summaryData?.expiry?.soon ?? 0} tone="warning" />
+          <AlertSummary icon={PackageX} label="Số lô mỹ phẩm đã hết hạn sử dụng" value={summaryData?.expiry?.expired ?? 0} tone="danger" />
         </>
       )}
     </div>
@@ -73,6 +104,8 @@ export default function AlertsPage() {
   return (
     <div className={`page-stack alert-page${isStock ? ' alert-page--stock' : ' alert-page--expiry'}`}>
       <PageHeader title={heading} />
+      {loading && <div className="panel data-loading" role="status">Đang tổng hợp cảnh báo từ SQL…</div>}
+      {loadError && <div className="panel data-error" role="alert">Không tải được cảnh báo: {loadError}</div>}
       <FeedbackDialog
         open={stockWarningOpen}
         title="Cảnh báo tồn kho"
@@ -93,7 +126,7 @@ export default function AlertsPage() {
           <SearchBox value={query} onChange={(value) => { setQuery(value); setPage(1); }} placeholder="Nhập từ khóa cần tra cứu..." />
           <span>Kết quả {rows.length} sản phẩm</span>
         </div>
-        <DataTable columns={columns} rows={pageRows} rowKey="lot" emptyMessage="Không tìm thấy sản phẩm phù hợp!" />
+        <DataTable columns={columns} rows={pageRows} rowKey={isStock ? 'id' : 'lot'} emptyMessage="Không tìm thấy sản phẩm phù hợp!" />
         <div className="panel__footer"><Pagination page={page} pageCount={pageCount} onChange={setPage} /></div>
       </section>
       <Link className="alert-page__switch" to={isStock ? '/canh-bao/han-su-dung' : '/canh-bao/ton-kho'}>

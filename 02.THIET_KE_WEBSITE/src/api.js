@@ -67,3 +67,23 @@ export async function apiRequest(path, { method = 'GET', body, auth = true } = {
   // Backend responses wrap endpoint results in { code, message, data }.
   return payload && Object.hasOwn(payload, 'data') && Object.hasOwn(payload, 'code') ? payload.data : payload;
 }
+
+export async function apiList(path) {
+  const url = new URL(path, window.location.origin);
+  const rows = [];
+  let page = 1;
+  let pageCount = 1;
+
+  do {
+    url.searchParams.set('page', String(page));
+    url.searchParams.set('limit', '100');
+    const result = await apiRequest(`${url.pathname}${url.search}`);
+    const pageRows = Array.isArray(result) ? result : result?.data;
+    if (!Array.isArray(pageRows)) return [];
+    rows.push(...pageRows);
+    pageCount = Number(result?.meta?.totalPages) || 1;
+    page += 1;
+  } while (page <= pageCount);
+
+  return rows;
+}

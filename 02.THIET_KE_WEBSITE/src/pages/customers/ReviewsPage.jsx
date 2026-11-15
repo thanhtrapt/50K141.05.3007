@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Image, Star } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import DataTable from '../../components/ui/DataTable.jsx';
@@ -7,18 +7,60 @@ import PageHeader from '../../components/ui/PageHeader.jsx';
 import PageListToolbar from '../../components/ui/PageListToolbar.jsx';
 import Pagination from '../../components/ui/Pagination.jsx';
 import SearchBox from '../../components/ui/SearchBox.jsx';
-import { customers, reviews as reviewData } from '../../data/mockData.js';
+import { apiList, apiRequest } from '../../api.js';
 
 export default function ReviewsPage() {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [reviewData, setReviewData] = useState([]);
+  const [selectedDetail, setSelectedDetail] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const reviewId = pathname.replace(/^\/danh-gia\/?/, '').split('/').filter(Boolean)[0];
-  const selected = reviewData.find((review) => review.id === reviewId);
-  const rows = useMemo(() => reviewData.filter((review) => `${review.customer} ${review.service}`.toLowerCase().includes(query.toLowerCase())), [query]);
+  const selected = selectedDetail ?? reviewData.find((review) => review.id === reviewId);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    apiList('/api/reviews')
+      .then((rows) => { if (active) setReviewData(rows.map((review) => ({
+        ...review,
+        customer: review.customerName,
+        service: review.serviceName || '—',
+        stars: Number(review.rating),
+        date: review.reviewedAt ? new Date(review.reviewedAt).toLocaleDateString('vi-VN') : '—',
+        comment: review.content,
+      }))); })
+      .catch((error) => { if (active) setLoadError(error.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    setSelectedDetail(null);
+    if (!reviewId) return () => { active = false; };
+    apiRequest(`/api/reviews/${encodeURIComponent(reviewId)}`)
+      .then((review) => { if (active) setSelectedDetail({
+        ...review,
+        customer: review.customerName,
+        service: review.serviceName || '—',
+        staff: review.staffName,
+        stars: Number(review.rating),
+        date: review.reviewedAt ? new Date(review.reviewedAt).toLocaleDateString('vi-VN') : '—',
+        comment: review.content,
+      }); })
+      .catch((error) => { if (active) setLoadError(error.message); });
+    return () => { active = false; };
+  }, [reviewId]);
+
+  const rows = useMemo(() => reviewData.filter((review) => `${review.customer} ${review.service} ${review.comment}`.toLowerCase().includes(query.toLowerCase())), [reviewData, query]);
   const pageCount = Math.max(1, Math.ceil(rows.length / 9));
   const pageRows = rows.slice((page - 1) * 9, page * 9);
+  if (loading) return <div className="panel data-loading" role="status">Đang tải đánh giá từ SQL…</div>;
+  if (loadError && !reviewData.length) return <div className="panel data-error" role="alert">Không tải được đánh giá: {loadError}</div>;
   const columns = [
     { key: 'date', label: 'Thời gian đánh giá', width: '20%', align: 'center' },
     { key: 'customer', label: 'Họ và tên khách hàng', width: '26%', render: (review) => <button type="button" className="table-link" onClick={() => navigate(`/danh-gia/${review.id}`)}>{review.customer}</button> },
@@ -32,7 +74,6 @@ export default function ReviewsPage() {
 
   if (reviewId) {
     if (!selected) return <FeatureNotFound heading="ĐÁNH GIÁ CỦA KHÁCH" message="Không tìm thấy đánh giá phù hợp!" onBack={() => navigate('/danh-gia')} />;
-    const customer = customers.find((item) => item.name === selected.customer);
     return (
       <div className="page-stack review-detail-page">
         <PageHeader
@@ -44,7 +85,7 @@ export default function ReviewsPage() {
           <h2>Thông tin chung</h2>
           <dl className="review-detail-page__facts">
             <div><dt>Họ và tên khách hàng</dt><dd>{selected.customer}</dd></div>
-            <div><dt>Số điện thoại</dt><dd>{customer?.phone || '—'}</dd></div>
+            <div><dt>Số điện thoại</dt><dd>{selected.customerPhone || '—'}</dd></div>
             <div><dt>Tên dịch vụ thực hiện</dt><dd>{selected.service}</dd></div>
             <div><dt>Tên nhân viên thực hiện</dt><dd>{selected.staff || '—'}</dd></div>
             <div><dt>Mức đánh giá</dt><dd className="rating-stars">{Array.from({ length: 5 }, (_, index) => <Star key={index} size={18} fill={index < selected.stars ? 'currentColor' : 'none'} />)}<span>{selected.stars}/5</span></dd></div>
@@ -57,7 +98,7 @@ export default function ReviewsPage() {
           <section className="review-detail-page__photos">
             <h3>Hình ảnh đánh giá</h3>
             <div className="review-detail-page__photo-grid">
-              {Array.from({ length: 4 }, (_, index) => <div className="review-detail-page__photo-placeholder" key={index}><Image aria-hidden="true" size={28} /></div>)}
+              {selected.image ? <img className="review-detail-page__photo" src={selected.image} alt="Hình ảnh đánh giá" /> : <div className="review-detail-page__photo-placeholder"><Image aria-hidden="true" size={28} /><span>Chưa có hình ảnh</span></div>}
             </div>
           </section>
         </section>

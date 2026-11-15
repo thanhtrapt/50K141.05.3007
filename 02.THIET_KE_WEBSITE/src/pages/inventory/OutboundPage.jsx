@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import Button from '../../components/ui/Button.jsx';
 import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
@@ -11,17 +11,10 @@ import SearchBox from '../../components/ui/SearchBox.jsx';
 import SelectField from '../../components/ui/SelectField.jsx';
 import TextField from '../../components/ui/TextField.jsx';
 import { useFeedback } from '../../components/ui/FeedbackContext.jsx';
-import { outboundRecords as initialRecords, products } from '../../data/mockData.js';
-
-const lotCatalog = [
-  { id: '211026-001', productId: 'MP00000001', expiry: '2028-10-21', stock: 24 },
-  { id: '150926-002', productId: 'MP00000002', expiry: '2028-09-15', stock: 18 },
-  { id: '200826-003', productId: 'MP00000003', expiry: '2028-08-20', stock: 12 },
-];
+import { apiList, apiRequest } from '../../api.js';
+import { useAuth } from '../../auth/AuthContext.jsx';
 const emptyLine = () => ({ product: '', lot: '', quantity: '' });
 const emptyForm = () => ({ date: '', recipient: '', lines: [emptyLine()] });
-const unitByProduct = { MP00000001: 'Chai', MP00000002: 'Chai', MP00000003: 'Hũ', MP00000004: 'Gói', MP00000005: 'Chai', MP00000006: 'Chai', MP00000007: 'Hũ', MP00000008: 'Chai' };
-
 function formatDate(value) {
   if (!value) return '';
   const [year, month, day] = value.split('-');
@@ -29,7 +22,10 @@ function formatDate(value) {
 }
 
 export default function OutboundPage() {
-  const [records, setRecords] = useState(initialRecords);
+  const [records, setRecords] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [lotCatalog, setLotCatalog] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState('list');
   const [selected, setSelected] = useState(null);
@@ -40,13 +36,29 @@ export default function OutboundPage() {
   const [submitted, setSubmitted] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const { showDialog } = useFeedback();
+  const { user } = useAuth();
+  const unitByProduct = Object.fromEntries(products.map((item) => [item.id, item.unit]));
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([apiList('/api/stock-issues'), apiList('/api/cosmetics'), apiList('/api/lots')])
+      .then(([issues, cosmetics, lots]) => {
+        if (!active) return;
+        setRecords(issues.map((item) => ({ ...item, date: formatDate(String(item.issueDate).slice(0, 10)), customer: item.creator, total: 0 })));
+        setProducts(cosmetics.filter((item) => item.category === 'Dùng cho liệu trình'));
+        setLotCatalog(lots.map((lot) => ({ id: lot.id, productId: lot.cosmeticId, expiry: String(lot.expiryDate).slice(0, 10), stock: Number(lot.stock) })));
+      })
+      .catch((error) => { if (active) showDialog({ title: 'Không tải được phiếu xuất kho', message: error.message }); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [showDialog]);
   const visibleRecords = useMemo(() => records.filter((item) => item.id.toLowerCase().includes(query.toLowerCase())), [records, query]);
   const pageCount = Math.max(1, Math.ceil(visibleRecords.length / 9));
   const pageRecords = visibleRecords.slice((page - 1) * 9, page * 9);
 
   const openCreate = () => {
-    setCode(`PX${String(records.length + 1).padStart(8, '0')}`);
-    setForm(emptyForm());
+    setCode('Tự động tạo');
+    setForm({ ...emptyForm(), recipient: user?.full_name || user?.name || '' });
     setFormError('');
     setSubmitted(false);
     setMode('create');
@@ -57,7 +69,7 @@ export default function OutboundPage() {
     lines: current.lines.map((line, lineIndex) => lineIndex === index ? { ...line, ...changes } : line),
   }));
 
-  const saveIssue = (event) => {
+  const saveIssue = async (event) => {
     event.preventDefault();
     setSubmitted(true);
     if (!form.recipient.trim() || !form.date || form.lines.some((line) => !line.product || !line.lot || Number(line.quantity) < 1)) {
@@ -70,29 +82,37 @@ export default function OutboundPage() {
     });
     if (invalidQuantity) { setFormError('Số lượng xuất vượt quá số lượng tồn của lô'); return; }
     setFormError('');
-    const firstLine = form.lines.find((line) => line.product);
-    const newRecord = {
-      id: code,
-      date: new Date(`${form.date}T00:00:00`).toLocaleDateString('vi-VN'),
-      customer: form.recipient,
-      total: 0,
-      product: products.find((item) => item.id === firstLine?.product)?.name ?? '',
-      quantity: Number(firstLine?.quantity) || 0,
-      items: form.lines.filter((line) => line.product).map((line) => ({
-        product: products.find((item) => item.id === line.product)?.name ?? '',
-        lot: line.lot,
-        quantity: Number(line.quantity),
-      })),
-    };
-    setRecords((current) => [newRecord, ...current]);
-    setSelected(newRecord);
-    setMode('list');
-    showDialog({ tone: 'success', title: 'Tạo phiếu xuất thành công' });
+    try {
+      const created = await apiRequest('/api/stock-issues', {
+        method: 'POST',
+        body: { issueDate: form.date, items: form.lines.map((line) => ({ cosmeticId: line.product, batchId: line.lot, quantity: Number(line.quantity) })) },
+      });
+      const rows = await apiList('/api/stock-issues');
+      const refreshed = rows.map((item) => ({ ...item, date: formatDate(String(item.issueDate).slice(0, 10)), customer: item.creator, total: 0 }));
+      setRecords(refreshed);
+      setMode('list');
+      const createdRecord = refreshed.find((item) => item.id === created.id);
+      if (createdRecord) await openDetail(createdRecord);
+      showDialog({ tone: 'success', title: 'Tạo phiếu xuất thành công', message: 'Phiếu xuất và số lượng tồn kho đã được cập nhật trong SQL.' });
+    } catch (error) {
+      setFormError(error.message || 'Không thể lưu phiếu xuất kho vào SQL.');
+    }
   };
+
+  const openDetail = async (record) => {
+    try {
+      const detail = await apiRequest(`/api/stock-issues/${encodeURIComponent(record.id)}`);
+      setSelected({ ...record, ...detail, date: formatDate(String(detail.issueDate).slice(0, 10)), customer: detail.creator, items: (detail.items ?? []).map((item) => ({ product: item.cosmeticName, lot: item.lotCode, quantity: item.quantity })) });
+    } catch (error) {
+      showDialog({ title: 'Không tải được chi tiết phiếu xuất', message: error.message });
+    }
+  };
+
+  if (loading) return <div className="panel data-loading" role="status">Đang tải phiếu xuất kho từ SQL…</div>;
 
   const columns = [
     { key: 'index', label: 'STT', width: '8%', minWidth: 70, align: 'center', render: (_, index) => index + 1 },
-    { key: 'id', label: 'Mã phiếu xuất', width: '30.67%', align: 'center', render: (record) => <button type="button" className="table-link" onClick={() => setSelected(record)}>{record.id}</button> },
+    { key: 'id', label: 'Mã phiếu xuất', width: '30.67%', align: 'center', render: (record) => <button type="button" className="table-link" onClick={() => openDetail(record)}>{record.id}</button> },
     { key: 'date', label: 'Ngày xuất', width: '30.67%', align: 'center' },
     { key: 'total', label: 'Tổng tiền', width: '30.66%', align: 'right', nowrap: true, render: (record) => record.total ? `${new Intl.NumberFormat('vi-VN').format(record.total)} ₫` : '—' },
   ];
