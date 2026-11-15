@@ -72,11 +72,26 @@ export function AuthProvider({ children }) {
   }, [token]);
 
   const login = useCallback(async (phone, password) => {
-    const result = await apiRequest('/api/auth/login', {
-      method: 'POST',
-      auth: false,
-      body: { phone, password },
-    });
+    let result;
+    try {
+      result = await apiRequest('/api/auth/login', {
+        method: 'POST',
+        auth: false,
+        body: { phone, password },
+      });
+    } catch (error) {
+      // 401 nghĩa là đã kết nối được máy chủ nhưng sai thông tin đăng nhập.
+      if (error?.status === 401 || error?.code === 'AUTH_INVALID') {
+        const invalidCredentials = new Error('Sai số điện thoại hoặc mật khẩu.');
+        invalidCredentials.status = 401;
+        invalidCredentials.code = 'AUTH_INVALID';
+        throw invalidCredentials;
+      }
+      throw error;
+    }
+    if (!result?.accessToken) {
+      throw new Error('Máy chủ trả về dữ liệu đăng nhập không hợp lệ.');
+    }
     window.localStorage.setItem(TOKEN_KEY, result.accessToken);
     storeUser(result.user ?? null);
     setUser(result.user ?? null);

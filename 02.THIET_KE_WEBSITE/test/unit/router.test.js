@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveRoute } from '../../api/[...route].js';
+import { resolveRoute } from '../../api/index.js';
 
 test('catch-all router resolves nested service package params by name', () => {
   const match = resolveRoute('/api/service-packages/PACKAGE-01/sessions/SESSION-02/complete');
@@ -29,8 +29,27 @@ test('catch-all function keeps the existing /api/health URL and response contrac
     get writableEnded() { return this._writableEnded || false; },
     set writableEnded(value) { this._writableEnded = value; },
   };
-  await (await import('../../api/[...route].js')).default(
+  await (await import('../../api/index.js')).default(
     { url: '/api/health', method: 'GET', headers: {}, query: {} },
+    response,
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(JSON.parse(response.body).data, { status: 'ok', service: 'huong-spa-backend' });
+});
+
+test('catch-all function resolves the original path forwarded by the Vercel rewrite', async () => {
+  const response = {
+    status: null,
+    headers: {},
+    body: '',
+    writeHead(status, headers) { this.status = status; this.headers = headers; },
+    setHeader(name, value) { this.headers[name] = value; },
+    end(body) { this.body = body || ''; this.writableEnded = true; },
+    get writableEnded() { return this._writableEnded || false; },
+    set writableEnded(value) { this._writableEnded = value; },
+  };
+  await (await import('../../api/index.js')).default(
+    { url: '/api?__path=health', method: 'GET', headers: {}, query: { __path: 'health' } },
     response,
   );
   assert.equal(response.status, 200);

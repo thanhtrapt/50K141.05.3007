@@ -45,6 +45,7 @@ function defaultPublicBaseUrl(port) {
 }
 
 const port = Number(process.env.PORT || 4000);
+const DEFAULT_JWT_SECRET = 'development-only-change-this-jwt-secret-32chars';
 
 export const config = Object.freeze({
   projectRoot,
@@ -53,7 +54,7 @@ export const config = Object.freeze({
   host: process.env.HOST || '127.0.0.1',
   port,
   nodeEnv: process.env.NODE_ENV || 'development',
-  jwtSecret: process.env.JWT_SECRET || 'development-only-change-this-jwt-secret-32chars',
+  jwtSecret: process.env.JWT_SECRET || DEFAULT_JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '8h',
   databaseUrl: process.env.DATABASE_URL || '',
   uploadDir: resolveProjectPath(process.env.UPLOAD_DIR, defaultUploadDir()),
@@ -68,6 +69,15 @@ export const config = Object.freeze({
   jobsSecret: process.env.JOBS_SECRET || process.env.N8N_WEBHOOK_SECRET || '',
 });
 
-if (config.nodeEnv === 'production' && config.jwtSecret.startsWith('development-only')) {
-  throw new Error('JWT_SECRET phải được thay bằng khóa bí mật riêng trước khi chạy production.');
+if (config.nodeEnv === 'production' && config.jwtSecret === DEFAULT_JWT_SECRET) {
+  // Không throw ngay khi nạp module: nếu ném ở đây, toàn bộ function (kể cả
+  // /api/health) sẽ trả 500 và rất khó chẩn đoán. Việc kiểm tra được thực hiện
+  // khi thực sự ký/kiểm tra token.
+  console.error('CẢNH BÁO: JWT_SECRET chưa được cấu hình. Hãy đặt biến JWT_SECRET trong Vercel > Settings > Environment Variables.');
+}
+
+export function assertJwtSecretConfigured() {
+  if (config.nodeEnv === 'production' && config.jwtSecret === DEFAULT_JWT_SECRET) {
+    throw new Error('JWT_SECRET phải được thay bằng khóa bí mật riêng trước khi chạy production.');
+  }
 }

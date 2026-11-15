@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
-import { config } from './config.js';
+import { config, assertJwtSecretConfigured } from './config.js';
 const scrypt = promisify(crypto.scrypt);
 
 export function hashPassword(password) {
@@ -25,6 +25,7 @@ function durationSeconds(text) {
 }
 
 export function signToken(user) {
+  assertJwtSecretConfigured();
   const now = Math.floor(Date.now()/1000);
   const header = Buffer.from(JSON.stringify({ alg:'HS256',typ:'JWT' })).toString('base64url');
   const payload = Buffer.from(JSON.stringify({ sub:String(user.id),phone:user.phone,role:user.role,iat:now,exp:now+durationSeconds(config.jwtExpiresIn) })).toString('base64url');
@@ -34,6 +35,7 @@ export function signToken(user) {
 }
 
 export function verifyToken(token) {
+  assertJwtSecretConfigured();
   const parts = String(token || '').split('.');
   if (parts.length !== 3) return null;
   const content = `${parts[0]}.${parts[1]}`;

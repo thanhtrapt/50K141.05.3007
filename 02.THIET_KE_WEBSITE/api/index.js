@@ -132,7 +132,22 @@ export function resolveRoute(pathname) {
 }
 
 export default async function catchAll(req, res) {
-  const pathname = new URL(req.url || '/', 'http://localhost').pathname;
+  const url = new URL(req.url || '/', 'http://localhost');
+
+  // Vercel chỉ định tuyến được một tầng động cho một Function, nên không thể
+  // dùng `api/[...route].js` để bắt các đường dẫn nhiều tầng như
+  // `/api/auth/login`. `vercel.json` chuyển mọi `/api/...` về function này và
+  // gửi phần đường dẫn gốc trong tham số `__path`.
+  const forwarded = req.query && typeof req.query.__path === 'string' ? req.query.__path : '';
+  const pathname = forwarded
+    ? `/api/${forwarded.replace(/^\/+/, '')}`
+    : url.pathname;
+
+  // Bỏ `__path` khỏi query để handler chỉ thấy query thật của người dùng.
+  const search = new URLSearchParams(url.searchParams);
+  search.delete('__path');
+  req.url = `${pathname}${search.toString() ? `?${search.toString()}` : ''}`;
+
   const matched = resolveRoute(pathname);
   if (matched?.error) {
     return sendJson(res, 400, {
@@ -149,6 +164,8 @@ export default async function catchAll(req, res) {
     });
   }
 
-  req.query = { ...(req.query && typeof req.query === 'object' ? req.query : {}), ...matched.params };
+  const platformParams = { ...(req.query && typeof req.query === 'object' ? req.query : {}) };
+  delete platformParams.__path;
+  req.query = { ...platformParams, ...matched.params };
   return matched.handler(req, res);
 }

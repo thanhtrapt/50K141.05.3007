@@ -3,7 +3,6 @@ import path from 'node:path';
 import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import PDFDocument from 'pdfkit';
-import sharp from 'sharp';
 import { config } from './config.js';
 import { getPool,dbTypes } from './database.js';
 
@@ -20,7 +19,12 @@ function localImagePath(value) {
 
 async function imageBuffer(value) {
   const full=localImagePath(value);if(!full)return null;
-  try {const input=await fs.readFile(full);return await sharp(input).rotate().png().toBuffer();} catch { return null; }
+  try {
+    // Nạp sharp theo nhu cầu: đây là module native, nếu lỗi binary trên môi
+    // trường deploy thì chỉ ảnh trong PDF bị bỏ qua thay vì làm sập mọi API.
+    const { default: sharp } = await import('sharp');
+    const input=await fs.readFile(full);return await sharp(input).rotate().png().toBuffer();
+  } catch { return null; }
 }
 
 function ensureSpace(doc,height=70) {

@@ -9,12 +9,17 @@ import { config } from '../api/_lib/config.js';
  * mỗi tệp .js (trừ những tệp bắt đầu bằng `_`) là một endpoint `/api/...`,
  * `[id]` là tham số động và `[...path]` là tham số bắt toàn bộ phần còn lại.
  *
+ * `api/index.js` là router duy nhất (tương ứng `/api` trên Vercel). Mọi đường
+ * dẫn `/api/...` không khớp tệp tĩnh nào sẽ được chuyển cho router này, giống
+ * rewrite trong `vercel.json`.
+ *
  * Nhờ vậy `npm run dev` chạy được toàn bộ Frontend + API bằng Node thuần,
  * không cần cài Vercel CLI.
  */
 const apiDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'api');
 
 const routes = [];
+let routerFile = null;
 function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.name.startsWith('_')) continue;
@@ -26,6 +31,10 @@ function walk(dir) {
     if (!entry.name.endsWith('.js')) continue;
 
     const relative = path.relative(apiDir, full).replaceAll('\\', '/');
+    if (relative === 'index.js') {
+      routerFile = full;
+      continue;
+    }
     const segments = relative.replace(/\.js$/, '').split('/').filter((segment) => segment !== 'index');
     const keys = [];
     let dynamicCount = 0;
@@ -55,6 +64,9 @@ routes.sort((a, b) => a.dynamicCount - b.dynamicCount || b.pattern.length - a.pa
 for (const route of routes) {
   route.handler = (await import(pathToFileURL(route.full).href)).default;
 }
+const routerHandler = routerFile
+  ? (await import(pathToFileURL(routerFile).href)).default
+  : null;
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://localhost');
@@ -67,6 +79,11 @@ const server = http.createServer(async (req, res) => {
 
   const matched = routes.find((route) => route.regex.test(url.pathname));
   if (!matched) {
+    if (routerHandler) {
+      req.query = Object.fromEntries(url.searchParams.entries());
+      await routerHandler(req, res);
+      return;
+    }
     res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ code: 'NOT_FOUND', message: 'Không tìm thấy API phù hợp.', fieldErrors: [] }));
     return;
