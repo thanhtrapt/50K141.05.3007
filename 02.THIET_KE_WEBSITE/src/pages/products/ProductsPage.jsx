@@ -151,7 +151,7 @@ export default function ProductsPage() {
             aria-label="Loại sản phẩm"
             value={category}
             onChange={(event) => { setCategory(event.target.value); setPage(1); }}
-            options={[{ value: '', label: 'Loại sản phẩm' }, ...productCategories.map((value) => ({ value, label: value }))]}
+            options={[{ value: '', label: 'Tất cả' }, ...productCategories.map((value) => ({ value, label: value }))]}
           />
         )}
         actions={<Button onClick={() => navigate(`${basePath}/tao-moi`)}><Plus size={18} />Thêm mỹ phẩm</Button>}

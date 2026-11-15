@@ -57,6 +57,7 @@ export const config = Object.freeze({
   jwtSecret: process.env.JWT_SECRET || DEFAULT_JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '8h',
   databaseUrl: process.env.DATABASE_URL || '',
+  enableZaloSimulation: /^true$/i.test(process.env.ENABLE_ZALO_SIMULATION || ''),
   uploadDir: resolveProjectPath(process.env.UPLOAD_DIR, defaultUploadDir()),
   publicBaseUrl: (process.env.PUBLIC_BASE_URL || defaultPublicBaseUrl(port)).replace(/\/$/, ''),
   pdfFontPath: resolveProjectPath(process.env.PDF_FONT_PATH, 'C:/Windows/Fonts/arial.ttf'),

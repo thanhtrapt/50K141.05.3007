@@ -5,7 +5,7 @@ import { simulateConfirmedSession } from '../../_lib/webhooks.js';
 export default endpoint({
   path: '/api/dev/simulate-zalo-session-confirmed',
   methods: ['POST'],
-  roles: ['OWNER'],
+  roles: ['OWNER', 'STAFF'],
   internal: true,
   handler: ({ body, user }) => simulateConfirmedSession(body, user),
 });

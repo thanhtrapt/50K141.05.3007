@@ -19,6 +19,14 @@ import ServiceSessionDetailPage from './ServiceSessionDetailPage.jsx';
 
 const basePath = '/dich-vu';
 
+function parseUsageEntries(value) {
+  if (!value) return [];
+  return String(value).split(';').map((item) => item.trim()).filter(Boolean).map((item) => {
+    const match = /^(.*?)\s+\(([^()]*)\)$/.exec(item);
+    return match ? { product: match[1], amount: match[2] } : { product: item, amount: '' };
+  });
+}
+
 export default function ServicesPage() {
   const { can } = useAuth();
   // STAFF chỉ được xem dịch vụ; chỉ OWNER được thêm, sửa, xóa.
@@ -39,9 +47,10 @@ export default function ServicesPage() {
     sessionDetails: (service.sessions ?? service.sessionDetails ?? []).map((session) => ({
       ...session,
       minutes: String(session.durationMinutes ?? session.minutes ?? ''),
-      entries: session.entries ?? (session.technique || session.cosmeticsUsage ? [{
-        technique: session.technique || '', product: session.cosmeticsUsage || '', amount: '',
-      }] : []),
+      entries: session.entries ?? parseUsageEntries(session.cosmeticsUsage).map((entry) => ({
+        ...entry,
+        technique: session.technique || '',
+      })),
     })),
   });
 
@@ -99,7 +108,13 @@ export default function ServicesPage() {
     setItems((current) => editingId
       ? current.map((service) => service.id === editingId ? normalizeService(saved) : service)
       : [...current, normalizeService(saved)]);
-    showDialog({ tone: 'success', title: editingId ? 'Cập nhật thành công' : 'Tạo thành công', message: 'Dữ liệu đã được lưu vào cơ sở dữ liệu SQL.' });
+    showDialog({
+      tone: 'success',
+      title: editingId ? 'Cập nhật thành công' : 'Tạo thành công',
+      message: editingId
+        ? 'Dữ liệu đã được lưu vào cơ sở dữ liệu SQL.'
+        : 'Thông tin dịch vụ sau khi tạo đã được lưu vào cơ sở dữ liệu SQL.',
+    });
     navigate(editingId ? `${basePath}/${editingId}` : basePath);
     return saved;
   };

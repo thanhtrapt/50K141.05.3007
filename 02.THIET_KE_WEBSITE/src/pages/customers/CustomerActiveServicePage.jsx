@@ -6,13 +6,15 @@ import {
   FileText,
   ImagePlus,
   Info,
+  MessageCircleCheck,
+  PenLine,
   Trash2,
-  X,
 } from 'lucide-react';
 import Button from '../../components/ui/Button.jsx';
 import DataTable from '../../components/ui/DataTable.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import FeedbackDialog from '../../components/ui/FeedbackDialog.jsx';
+import { useFeedback } from '../../components/ui/FeedbackContext.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import StatusBadge from '../../components/ui/StatusBadge.jsx';
 import TreatmentReportModal from '../../components/reports/TreatmentReportModal.jsx';
@@ -26,10 +28,55 @@ function makeId() {
   return globalThis.crypto?.randomUUID?.() ?? `img-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function dateLabel(value) {
-  if (!value) return '--';
+function toISODate(value) {
+  if (!value) return '';
+  if (value instanceof Date && !Number.isNaN(value.valueOf())) return value.toISOString().slice(0, 10);
+  const text = String(value);
+  const iso = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (iso) return iso[1];
+  const local = text.match(/^(\d{2})\/(\d{2})\/(\d{2}|\d{4})$/);
+  if (local) return (local[3].length === 2 ? '20' + local[3] : local[3]) + '-' + local[2] + '-' + local[1];
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short' }).format(date);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+}
+
+function formatDateInput(value) {
+  const iso = toISODate(value);
+  if (!iso) return '';
+  const [year, month, day] = iso.split('-');
+  return day + '/' + month + '/' + year.slice(-2);
+}
+
+function parseDateInput(value) {
+  const match = String(value || '').trim().match(/^(\d{2})\/(\d{2})\/(\d{2})$/);
+  if (!match) return '';
+  const [, day, month, shortYear] = match;
+  const year = '20' + shortYear;
+  const date = new Date(year + '-' + month + '-' + day + 'T00:00:00Z');
+  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === year + '-' + month + '-' + day ? year + '-' + month + '-' + day : '';
+}
+
+function dateLabel(value) {
+  return formatDateInput(value) || '--';
+}
+
+function validatePackageEdit(values) {
+  const errors = {};
+  for (const field of ['purchaseDate', 'startDate']) {
+    if (!String(values[field] || '').trim()) errors[field] = 'Trường này không được để trống.';
+    else if (!parseDateInput(values[field])) errors[field] = 'Nhập ngày theo định dạng dd/MM/yy.';
+  }
+  if (values.expectedEndDate && !parseDateInput(values.expectedEndDate)) errors.expectedEndDate = 'Nhập ngày theo định dạng dd/MM/yy.';
+  const start = parseDateInput(values.startDate);
+  const end = parseDateInput(values.expectedEndDate);
+  if (start && end && end < start) errors.expectedEndDate = 'Ngày kết thúc dự kiến không được trước ngày bắt đầu.';
+  if (!['Chưa thanh toán', 'Đã thanh toán'].includes(values.paymentStatus)) errors.paymentStatus = 'Chọn trạng thái thanh toán hợp lệ.';
+  return errors;
+}
+
+function showApiError(notify, error, fallback) {
+  if (error?.isServerError || error?.code === 'NETWORK_ERROR') return;
+  notify(error?.message || fallback, 'error');
 }
 
 function parseProducts(value) {
@@ -70,9 +117,12 @@ function normalizePackage(record, customer) {
     name: record.serviceName || 'Dịch vụ',
     purchaseOrder: record.id,
     price: Number(record.purchasePrice) || 0,
-    startDate: dateLabel(record.purchaseDate),
-    expectedEndDate: record.endedAt ? dateLabel(record.endedAt) : '',
+    startDate: dateLabel(record.startDate || record.purchaseDate),
+    startDateValue: toISODate(record.startDate || record.purchaseDate),
+    expectedEndDate: dateLabel(record.expectedEndDate),
+    expectedEndDateValue: toISODate(record.expectedEndDate),
     purchaseDate: dateLabel(record.purchaseDate),
+    purchaseDateValue: toISODate(record.purchaseDate),
     paymentStatus: record.paymentStatus || '—',
     status: record.completionStatus || 'Chưa thực hiện',
     totalSessions: Number(record.totalSessions) || sessions.length,
@@ -131,13 +181,19 @@ export default function CustomerActiveServicePage({ customer, packageId: request
   const [resultMissingOpen, setResultMissingOpen] = useState(false);
   const [resultDraft, setResultDraft] = useState('');
   const [editingResult, setEditingResult] = useState(false);
-  const [notice, setNotice] = useState('');
+  const [editValues, setEditValues] = useState(null);
+  const [editErrors, setEditErrors] = useState({});
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [simulatingConfirmation, setSimulatingConfirmation] = useState(false);
+  const { notify, showDialog } = useFeedback();
   const sessionInputRefs = useRef({});
+  const simulationEnabled = import.meta.env.VITE_ENABLE_ZALO_SIMULATION === 'true';
 
   const selectedSession = usage?.sessions.find((session) => session.number === selectedSessionNumber) ?? null;
   const completedCount = completedSessionCount(usage?.sessions ?? []);
   const remainingCount = Math.max(0, (usage?.totalSessions ?? 0) - completedCount);
-  const serviceStatus = completedCount >= (usage?.totalSessions ?? 0) ? 'Hoàn thành' : usage?.status;
+  const serviceStatus = usage?.status || 'Chưa thực hiện';
   const lightboxImages = useMemo(() => {
     if (!lightbox) return [];
     const session = usage?.sessions.find((item) => item.number === lightbox.sessionNumber);
@@ -150,6 +206,9 @@ export default function CustomerActiveServicePage({ customer, packageId: request
     setLoading(true);
     setLoadError('');
     setUsage(null);
+    setEditingDetails(false);
+    setEditValues(null);
+    setEditErrors({});
     setSelectedSessionNumber(null);
     setLightbox(null);
     if (!packageId) {
@@ -171,6 +230,88 @@ export default function CustomerActiveServicePage({ customer, packageId: request
     return next;
   };
 
+  const initialEditValues = () => ({
+    purchaseDate: formatDateInput(usage?.purchaseDateValue),
+    startDate: formatDateInput(usage?.startDateValue),
+    expectedEndDate: formatDateInput(usage?.expectedEndDateValue),
+    paymentStatus: usage?.paymentStatus || '',
+  });
+
+  const beginEditing = () => {
+    setEditValues(initialEditValues());
+    setEditErrors({});
+    setEditingDetails(true);
+  };
+
+  const changeEditValue = (field, value) => {
+    const next = { ...editValues, [field]: value };
+    setEditValues(next);
+    setEditErrors(validatePackageEdit(next));
+  };
+
+  const cancelEditing = () => {
+    if (JSON.stringify(editValues) === JSON.stringify(initialEditValues())) {
+      setEditingDetails(false);
+      setEditErrors({});
+      return;
+    }
+    showDialog({
+      tone: 'warning',
+      title: 'Xác nhận hủy chỉnh sửa',
+      message: 'Các thay đổi sẽ không được lưu. Bạn có chắc chắn muốn hủy?',
+      actions: [
+        { label: 'Quay lại', variant: 'secondary', onClick: () => {} },
+        { label: 'Xác nhận', onClick: () => { setEditingDetails(false); setEditValues(null); setEditErrors({}); } },
+      ],
+    });
+  };
+
+  const savePackageDetails = async () => {
+    if (!editValues) return;
+    const errors = validatePackageEdit(editValues);
+    setEditErrors(errors);
+    if (Object.keys(errors).length) return;
+    setSavingDetails(true);
+    try {
+      await apiRequest('/api/service-packages/' + encodeURIComponent(packageId), {
+        method: 'PUT',
+        body: {
+          purchaseDate: parseDateInput(editValues.purchaseDate),
+          startDate: parseDateInput(editValues.startDate),
+          expectedEndDate: parseDateInput(editValues.expectedEndDate),
+          paymentStatus: editValues.paymentStatus,
+        },
+      });
+      await refreshUsage();
+      setEditingDetails(false);
+      setEditValues(null);
+      setEditErrors({});
+      showDialog({ tone: 'success', title: 'Cập nhật thành công' });
+    } catch (error) {
+      const apiErrors = Object.fromEntries((error.fieldErrors || []).map((item) => [item.field, item.message]));
+      setEditErrors(apiErrors);
+      showApiError(notify, error, 'Không thể cập nhật thông tin liệu trình.');
+    } finally {
+      setSavingDetails(false);
+    }
+  };
+
+  const simulateCustomerConfirmation = async () => {
+    if (!selectedSession || simulatingConfirmation) return;
+    setSimulatingConfirmation(true);
+    try {
+      await apiRequest('/api/dev/simulate-zalo-session-confirmed', {
+        method: 'POST', body: { packageId, sessionId: selectedSession.id },
+      });
+      await refreshUsage();
+      notify('Khách hàng đã xác nhận.', 'success');
+    } catch (error) {
+      showApiError(notify, error, 'Không thể cập nhật xác nhận khách hàng.');
+    } finally {
+      setSimulatingConfirmation(false);
+    }
+  };
+
   const updateSession = (sessionNumber, updates) => setUsage((current) => ({
     ...current,
     sessions: current.sessions.map((session) => session.number === sessionNumber
@@ -189,9 +330,9 @@ export default function CustomerActiveServicePage({ customer, packageId: request
     try {
       await apiRequest(`/api/service-packages/${encodeURIComponent(packageId)}/sessions/${encodeURIComponent(selectedSession.id)}/start`, { method: 'POST', body: {} });
       await refreshUsage();
-      setNotice('Đã bắt đầu buổi và lưu trạng thái vào SQL.');
+      notify('Đã bắt đầu buổi và lưu trạng thái vào SQL.', 'success');
     } catch (error) {
-      setNotice(error.message || 'Không thể bắt đầu buổi.');
+      notify(error.message || 'Không thể bắt đầu buổi.', 'error');
     }
   };
 
@@ -203,9 +344,9 @@ export default function CustomerActiveServicePage({ customer, packageId: request
         method: 'POST', body: { result: resultDraft.trim() },
       });
       await refreshUsage();
-      setNotice('Đã lưu kết quả và trạng thái buổi vào SQL.');
+      notify('Đã lưu kết quả và trạng thái buổi vào SQL.', 'success');
     } catch (error) {
-      setNotice(error.message || 'Không thể hoàn tất buổi.');
+      notify(error.message || 'Không thể hoàn tất buổi.', 'error');
     }
   };
 
@@ -262,11 +403,11 @@ export default function CustomerActiveServicePage({ customer, packageId: request
           };
         }),
       }));
-      setNotice(persistedPath
+      notify(persistedPath
         ? `Đã lưu một ảnh sau điều trị của Buổi ${sessionNumber} vào SQL. Ảnh bổ sung và ảnh trước điều trị chỉ hiển thị trong phiên hiện tại.`
-        : `Ảnh đã thêm trong phiên hiện tại. Cơ sở dữ liệu hiện chỉ lưu một ảnh sau điều trị cho mỗi buổi.`);
+        : `Ảnh đã thêm trong phiên hiện tại. Cơ sở dữ liệu hiện chỉ lưu một ảnh sau điều trị cho mỗi buổi.`, 'success');
     } catch (error) {
-      setNotice(error.message || 'Không thể lưu hình ảnh.');
+      notify(error.message || 'Không thể lưu hình ảnh.', 'error');
     }
   };
 
@@ -285,9 +426,9 @@ export default function CustomerActiveServicePage({ customer, packageId: request
         ? { ...session, [side]: session[side].filter((image) => image.id !== imageId) }
         : session),
     }));
-      setNotice(image?.persisted ? 'Đã xóa ảnh khỏi SQL.' : 'Đã xóa ảnh khỏi phiên hiện tại.');
+      notify(image?.persisted ? 'Đã xóa ảnh khỏi SQL.' : 'Đã xóa ảnh khỏi phiên hiện tại.', 'error');
     } catch (error) {
-      setNotice(error.message || 'Không thể xóa hình ảnh.');
+      notify(error.message || 'Không thể xóa hình ảnh.', 'error');
     }
   };
 
@@ -299,9 +440,9 @@ export default function CustomerActiveServicePage({ customer, packageId: request
       });
       await refreshUsage();
       setEditingResult(false);
-      setNotice('Đã lưu kết quả buổi vào SQL.');
+      notify('Đã lưu kết quả buổi vào SQL.', 'success');
     } catch (error) {
-      setNotice(error.message || 'Không thể lưu kết quả.');
+      notify(error.message || 'Không thể lưu kết quả.', 'error');
     }
   };
 
@@ -378,17 +519,23 @@ export default function CustomerActiveServicePage({ customer, packageId: request
             <h2>Dịch vụ đang sử dụng</h2>
             <p>Hình ảnh, kết quả và thông tin được tổng hợp trực tiếp từ các buổi đã ghi nhận trong liệu trình.</p>
           </div>
-          <Button onClick={() => setReportOpen(true)}><FileText size={16} />XUẤT BÁO CÁO</Button>
+          <div className="customer-active-service-summary__actions">
+            {editingDetails ? <>
+              <Button variant="secondary" className="customer-active-service-edit-button" onClick={cancelEditing}>Hủy</Button>
+              <Button onClick={savePackageDetails} disabled={savingDetails}>{savingDetails ? 'Đang lưu…' : 'Lưu'}</Button>
+            </> : <Button variant="secondary" className="customer-active-service-edit-button" onClick={beginEditing}><PenLine size={15} />Chỉnh sửa</Button>}
+            <Button onClick={() => setReportOpen(true)}><FileText size={16} />XUẤT BÁO CÁO</Button>
+          </div>
         </header>
         <dl className="customer-active-service-summary__facts">
-          <div><dt>Mã đơn mua</dt><dd>{usage.purchaseOrder}</dd></div>
-          <div><dt>Giá dịch vụ</dt><dd>{formatCurrency(usage.price)}</dd></div>
-          <div><dt>Ngày bắt đầu</dt><dd>{usage.startDate || 'Chưa cập nhật'}</dd></div>
-          <div><dt>Ngày kết thúc dự kiến</dt><dd>{usage.expectedEndDate || 'Chưa cập nhật'}</dd></div>
-          <div><dt>Khách hàng</dt><dd>{customer.name} <small>{customer.id} · {customer.phone}</small></dd></div>
-          <div><dt>Ngày mua</dt><dd>{usage.purchaseDate}</dd></div>
-          <div><dt>Trạng thái thanh toán</dt><dd><StatusBadge tone={statusTone(usage.paymentStatus)}>{usage.paymentStatus}</StatusBadge></dd></div>
-          <div><dt>Tổng số buổi</dt><dd>{usage.totalSessions} buổi</dd></div>
+          <div className="is-readonly"><dt>Mã đơn mua</dt><dd>{usage.purchaseOrder}</dd></div>
+          <div className="is-readonly"><dt>Giá dịch vụ</dt><dd>{formatCurrency(usage.price)}</dd></div>
+          <div><dt>Ngày bắt đầu</dt><dd>{editingDetails ? <><input className="customer-active-service-edit-input" value={editValues.startDate} placeholder="dd/MM/yy" aria-invalid={Boolean(editErrors.startDate)} onChange={(event) => changeEditValue('startDate', event.target.value)} />{editErrors.startDate && <small className="customer-active-service-field-error">{editErrors.startDate}</small>}</> : usage.startDate || 'Chưa cập nhật'}</dd></div>
+          <div><dt>Ngày kết thúc dự kiến</dt><dd>{editingDetails ? <><input className="customer-active-service-edit-input" value={editValues.expectedEndDate} placeholder="dd/MM/yy" aria-invalid={Boolean(editErrors.expectedEndDate)} onChange={(event) => changeEditValue('expectedEndDate', event.target.value)} />{editErrors.expectedEndDate && <small className="customer-active-service-field-error">{editErrors.expectedEndDate}</small>}</> : usage.expectedEndDate || 'Chưa cập nhật'}</dd></div>
+          <div className="is-readonly"><dt>Khách hàng</dt><dd>{customer.name} <small>{customer.id} · {customer.phone}</small></dd></div>
+          <div><dt>Ngày mua</dt><dd>{editingDetails ? <><input className="customer-active-service-edit-input" value={editValues.purchaseDate} placeholder="dd/MM/yy" aria-invalid={Boolean(editErrors.purchaseDate)} onChange={(event) => changeEditValue('purchaseDate', event.target.value)} />{editErrors.purchaseDate && <small className="customer-active-service-field-error">{editErrors.purchaseDate}</small>}</> : usage.purchaseDate}</dd></div>
+          <div><dt>Trạng thái thanh toán</dt><dd>{editingDetails ? <><select className="customer-active-service-edit-input" value={editValues.paymentStatus} aria-invalid={Boolean(editErrors.paymentStatus)} onChange={(event) => changeEditValue('paymentStatus', event.target.value)}><option value="">Chọn trạng thái</option><option value="Chưa thanh toán">Chưa thanh toán</option><option value="Đã thanh toán">Đã thanh toán</option></select>{editErrors.paymentStatus && <small className="customer-active-service-field-error">{editErrors.paymentStatus}</small>}</> : <StatusBadge tone={statusTone(usage.paymentStatus)}>{usage.paymentStatus}</StatusBadge>}</dd></div>
+          <div className="is-readonly"><dt>Tổng số buổi</dt><dd>{usage.totalSessions} buổi</dd></div>
         </dl>
         <div className="customer-active-service-progress">
           <div className="customer-active-service-progress__status">
@@ -423,8 +570,6 @@ export default function CustomerActiveServicePage({ customer, packageId: request
           ]}
         />
       </section>
-
-      {notice && <div className="customer-active-service-notice" role="status"><span>{notice}</span><button type="button" aria-label="Đóng thông báo" onClick={() => setNotice('')}><X size={16} /></button></div>}
       <Modal
         open={Boolean(selectedSession)}
         title={selectedSession ? `CHI TIẾT BUỔI ${selectedSession.number}` : ''}
@@ -440,6 +585,10 @@ export default function CustomerActiveServicePage({ customer, packageId: request
             <div><dt>Trạng thái thực hiện</dt><dd><StatusBadge tone={statusTone(selectedSession.status)}>{selectedSession.status}</StatusBadge></dd></div>
             <div><dt>Xác nhận khách hàng</dt><dd><StatusBadge tone={statusTone(selectedSession.customerConfirmation)}>{selectedSession.customerConfirmation}</StatusBadge></dd></div>
           </dl>
+          {simulationEnabled && selectedSession.status === 'Chờ xác nhận' && selectedSession.customerConfirmation === 'Chưa xác nhận' && <div className="customer-active-service-simulation">
+            <span>Demo/Zalo</span>
+            <Button variant="secondary" className="customer-active-service-simulation__button" onClick={simulateCustomerConfirmation} disabled={simulatingConfirmation}><MessageCircleCheck size={16} />{simulatingConfirmation ? 'Đang cập nhật…' : 'Giả lập: khách đã xác nhận'}</Button>
+          </div>}
 
           <dl className="customer-service-session-detail__facts">
             <div><dt>Dịch vụ</dt><dd>{usage.name}</dd></div>
@@ -468,7 +617,7 @@ export default function CustomerActiveServicePage({ customer, packageId: request
                 {editingResult ? (
                   <div className="customer-service-session-result-editor">
                     <textarea value={resultDraft} onChange={(event) => setResultDraft(event.target.value)} aria-label="Kết quả điều trị" />
-                    <div><Button variant="secondary" onClick={() => { setEditingResult(false); setResultDraft(selectedSession.result || ''); }}>Hủy</Button><Button onClick={saveSessionResult}>Lưu kết quả</Button></div>
+                    <div><Button variant="secondary" onClick={() => { setEditingResult(false, 'error'); setResultDraft(selectedSession.result || ''); }}>Hủy</Button><Button onClick={saveSessionResult}>Lưu kết quả</Button></div>
                   </div>
                 ) : selectedSession.result ? (
                   <p>{selectedSession.result}</p>
@@ -517,7 +666,7 @@ export default function CustomerActiveServicePage({ customer, packageId: request
         serviceStatus={serviceStatus}
         completedCount={completedCount}
         remainingCount={remainingCount}
-        onResult={setNotice}
+        onResult={(message) => notify(message, message.startsWith('Báo cáo đã sẵn sàng') ? 'success' : 'warning')}
       />
     </div>
   );

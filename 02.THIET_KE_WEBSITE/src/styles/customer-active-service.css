@@ -157,22 +157,10 @@
   cursor: pointer;
 }
 
-.customer-active-service-notice,
 .customer-active-service-storage-error {
-  position: fixed;
-  z-index: 50;
-  right: 22px;
-  bottom: 22px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  max-width: min(480px, calc(100vw - 36px));
-  padding: 13px 15px;
-  color: #fff;
-  line-height: 1.45;
-  background: #684a35;
-  border-radius: var(--radius-small);
-  box-shadow: var(--shadow-popover);
+  position: fixed; z-index: 50; right: 22px; bottom: 22px; display: flex; align-items: center; gap: 12px;
+  max-width: min(480px, calc(100vw - 36px)); padding: 13px 15px; color: #7f2424; line-height: 1.45;
+  background: #fdeaea; border: 1px solid #efadad; border-radius: var(--radius-small); box-shadow: var(--shadow-popover);
 }
 
 .customer-active-service-notice button {
@@ -747,4 +735,20 @@ body:has(.customer-service-session-modal) {
   .customer-service-session-modal .modal__header h2 {
     font-size: 16px;
   }
+}
+
+
+.customer-active-service-summary__actions { display:flex; flex:0 0 auto; align-items:center; justify-content:flex-end; gap:10px; }
+.customer-active-service-edit-button { border-color:#8a6547; color:#684a35; }
+.customer-active-service-edit-input { width:min(100%,210px); min-height:38px; padding:8px 10px; color:var(--color-text); background:#fff; border:1px solid var(--color-border); border-radius:var(--radius-small); font:inherit; }
+.customer-active-service-edit-input[aria-invalid="true"] { border-color:#df5a50; }
+.customer-active-service-field-error { display:block; margin-top:5px; color:#a9342e; font-size:12px; font-weight:500; }
+.customer-active-service-summary__facts > .is-readonly dd { color:#776b63; }
+.customer-active-service-simulation { display:flex; align-items:center; justify-content:flex-end; gap:9px; margin:-4px 0 14px; }
+.customer-active-service-simulation > span { color:var(--color-muted); font-size:11px; }
+.customer-active-service-simulation__button { border-style:dashed; }
+@media (max-width:700px) {
+  .customer-active-service-summary__actions { flex-wrap:wrap; }
+  .customer-active-service-summary__header { flex-direction:column; }
+  .customer-active-service-summary__actions > .button { min-height:42px; }
 }

@@ -47,11 +47,9 @@ export default function ServiceSessionDetailPage({ service, sessionNumber, canWr
           </section>
           <section>
             <h3>Mỹ phẩm sử dụng</h3>
-            {entries.length ? <ol>{entries.map((entry, index) => <li key={`${entry.product}-${index}`}>{entry.product}</li>)}</ol> : <p>Chưa có mỹ phẩm được ghi nhận.</p>}
-          </section>
-          <section>
-            <h3>Định lượng sản phẩm</h3>
-            {entries.length ? <ol>{entries.map((entry, index) => <li key={`${entry.amount}-${index}`}>{entry.amount}</li>)}</ol> : <p>Chưa có định lượng.</p>}
+            {entries.length
+              ? <ul>{entries.map((entry, index) => <li key={`${entry.product}-${index}`}>{entry.product}{entry.amount ? `: ${entry.amount}` : ''}</li>)}</ul>
+              : <p>Chưa có mỹ phẩm sử dụng</p>}
           </section>
         </div>
       </section>

@@ -143,14 +143,14 @@ export default function ServiceFormPage({ record, nextId, onCancel, onSave }) {
               {entryErrors[index] && <p className="field__error" role="alert">{entryErrors[index]}</p>}
               <div className="service-form__entries-scroll">
                 <table className="service-form__entries">
-                  <thead><tr><th>Kỹ thuật thực hiện</th><th>Mỹ phẩm sử dụng</th><th>Định lượng sản phẩm</th><th aria-label="Thao tác" /></tr></thead>
+                  <thead><tr><th>Kỹ thuật thực hiện</th><th>Mỹ phẩm sử dụng</th><th aria-label="Thao tác" /></tr></thead>
                   <tbody>
                     {session.entries.length ? session.entries.map((entry, entryIndex) => (
                       <tr key={`${entry.product}-${entryIndex}`}>
-                        <td>{entry.technique}</td><td>{entry.product}</td><td>{entry.amount}</td>
+                        <td>{entry.technique}</td><td>{entry.product}{entry.amount ? `: ${entry.amount}` : ''}</td>
                         <td><button className="icon-button service-form__remove" type="button" aria-label="Xóa kỹ thuật" onClick={() => removeTechnique(index, entryIndex)}><Trash2 size={16} /></button></td>
                       </tr>
-                    )) : <tr><td colSpan="4" className="service-form__entries-empty">Chưa có kỹ thuật trong buổi này</td></tr>}
+                    )) : <tr><td colSpan="3" className="service-form__entries-empty">Chưa có kỹ thuật trong buổi này</td></tr>}
                   </tbody>
                 </table>
               </div>

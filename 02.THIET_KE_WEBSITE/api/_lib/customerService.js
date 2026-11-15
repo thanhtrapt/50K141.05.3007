@@ -92,9 +92,9 @@ export async function getCustomer(id) {
   }
   const productRows=[...grouped.values()];
   return {...customer,isBlacklisted:customer.cancellationCount>=threshold,blacklistThreshold:threshold,
-    activeServices:packages.filter(item=>item.completionStatus!=='Đã hoàn thành'),serviceHistory:packages,
+    activeServices:packages.filter(item=>item.completionStatus!=='Đã hoàn thành'),serviceHistory:packages.filter(item=>item.completionStatus==='Đã hoàn thành'),
     purchasedProducts:productRows,
-    emptyLabels:{additionalServices:packages.length?null:'Chưa có dịch vụ phát sinh',purchasedProducts:productRows.length?null:'Chưa có sản phẩm mua thêm',serviceHistory:packages.length?null:'Chưa có lịch sử dịch vụ'},
+    emptyLabels:{additionalServices:packages.some(item=>item.completionStatus!=='Đã hoàn thành')?null:'Chưa có dịch vụ phát sinh',purchasedProducts:productRows.length?null:'Chưa có sản phẩm mua thêm',serviceHistory:packages.some(item=>item.completionStatus==='Đã hoàn thành')?null:'Chưa có lịch sử dịch vụ'},
     actions:{recordRetailSale:true,viewServiceHistory:true}};
 }
 
@@ -152,7 +152,7 @@ export async function deleteCustomer(id,user) {
 
 export async function listCustomerServiceHistory(customerId,query={}) {
   await findCustomer(customerId);
-  const items=await packageSummaries(customerId);
+  const items=(await packageSummaries(customerId)).filter(item=>item.completionStatus==='Đã hoàn thành');
   const keyword=normalizeVietnamese(query.keyword||'');
   const filtered=keyword?items.filter(row=>normalizeVietnamese(`${row.serviceName} ${row.id} ${row.paymentStatus} ${row.completionStatus}`).includes(keyword)):items;
   return paginate(filtered,query.page,query.limit);
@@ -187,8 +187,8 @@ export async function assignServicePackage(customerId,body,user) {
     await requestFor(transaction).input('id',dbTypes.Char(10),packageId).input('date',dbTypes.DateTime2,dateValue)
       .input('payment',dbTypes.NVarChar(50),paymentStatus).input('note',dbTypes.NVarChar(255),note==null?null:String(note))
       .input('service',dbTypes.Char(10),serviceId).input('customer',dbTypes.Char(10),customerId)
-      .input('price',dbTypes.Money,purchasePrice).query(`INSERT INTO dbo.DonMuaDV(maDonMua,ngayMua,trangThaiThanhToan,trangThaiHoanThanh,fileTongHop,soBuoiDaThucHien,ghiChu,maDichVu,maKhachHang)
-        VALUES(@id,@date,@payment,N'Chưa thực hiện',NULL,0,@note,@service,@customer)`);
+      .input('price',dbTypes.Money,purchasePrice).input('startDate',dbTypes.Date,dateText(dateValue)).query(`INSERT INTO dbo.DonMuaDV(maDonMua,ngayMua,trangThaiThanhToan,trangThaiHoanThanh,fileTongHop,soBuoiDaThucHien,ghiChu,maDichVu,maKhachHang,ngayBatDau)
+        VALUES(@id,@date,@payment,N'Chưa thực hiện',NULL,0,@note,@service,@customer,@startDate)`);
     for(const template of templates) {
       const sessionId=await nextCode('CM',transaction);
       await requestFor(transaction).input('id',dbTypes.Char(10),sessionId).input('name',dbTypes.NVarChar(20),template.tenBuoi)
@@ -204,9 +204,59 @@ export async function assignServicePackage(customerId,body,user) {
   });
 }
 
+function isValidPackageDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(value + 'T00:00:00Z');
+  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+}
+
+export async function updateServicePackageDetails(id, body, user) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) body = {};
+  const allowedFields = new Set(['purchaseDate', 'startDate', 'expectedEndDate', 'paymentStatus']);
+  const errors = [];
+  for (const field of Object.keys(body)) {
+    if (!allowedFields.has(field)) errors.push({ field, message: 'Trường này không được phép chỉnh sửa.' });
+  }
+
+  const purchaseDate = String(body.purchaseDate ?? '').trim();
+  const startDate = String(body.startDate ?? '').trim();
+  const expectedEndDate = String(body.expectedEndDate ?? '').trim();
+  const paymentStatus = String(body.paymentStatus ?? '').trim();
+  if (!purchaseDate) errors.push({ field: 'purchaseDate', message: 'Ngày mua không được để trống.' });
+  else if (!isValidPackageDate(purchaseDate)) errors.push({ field: 'purchaseDate', message: 'Ngày mua không hợp lệ.' });
+  if (!startDate) errors.push({ field: 'startDate', message: 'Ngày bắt đầu không được để trống.' });
+  else if (!isValidPackageDate(startDate)) errors.push({ field: 'startDate', message: 'Ngày bắt đầu không hợp lệ.' });
+  if (expectedEndDate && !isValidPackageDate(expectedEndDate)) errors.push({ field: 'expectedEndDate', message: 'Ngày kết thúc dự kiến không hợp lệ.' });
+  if (expectedEndDate && isValidPackageDate(startDate) && expectedEndDate < startDate) {
+    errors.push({ field: 'expectedEndDate', message: 'Ngày kết thúc dự kiến không được trước ngày bắt đầu.' });
+  }
+  if (!['Chưa thanh toán', 'Đã thanh toán'].includes(paymentStatus)) {
+    errors.push({ field: 'paymentStatus', message: 'Trạng thái thanh toán không hợp lệ.' });
+  }
+  if (errors.length) throw error(400, 'VALIDATION_ERROR', 'Thông tin liệu trình chưa hợp lệ.', errors);
+
+  return inTransaction(async transaction => {
+    const before = (await requestFor(transaction).input('id', dbTypes.Char(10), id)
+      .query("SELECT maDonMua AS id,ngayMua AS purchaseDate,ngayBatDau AS startDate, " +
+        "ngayKetThucDuKien AS expectedEndDate,trangThaiThanhToan AS paymentStatus FROM dbo.DonMuaDV WITH (UPDLOCK,HOLDLOCK) WHERE maDonMua=@id")).recordset[0];
+    if (!before) throw notFound('Không tìm thấy liệu trình phù hợp!');
+    const expectedDateValue = expectedEndDate || null;
+    await requestFor(transaction).input('id', dbTypes.Char(10), id)
+      .input('purchaseDate', dbTypes.Date, purchaseDate)
+      .input('startDate', dbTypes.Date, startDate)
+      .input('expectedEndDate', dbTypes.Date, expectedDateValue)
+      .input('paymentStatus', dbTypes.NVarChar(50), paymentStatus)
+      .query("UPDATE dbo.DonMuaDV SET ngayMua=@purchaseDate,ngayBatDau=@startDate,ngayKetThucDuKien=@expectedEndDate, " +
+        "trangThaiThanhToan=@paymentStatus WHERE maDonMua=@id");
+    const after = { ...before, purchaseDate, startDate, expectedEndDate: expectedDateValue, paymentStatus };
+    await insertAudit({ transaction, user, action: 'Cập nhật thông tin liệu trình', entity: 'DonMuaDV', entityId: id, before, after });
+    return { id: String(id).trim(), purchaseDate, startDate, expectedEndDate: expectedDateValue, paymentStatus, message: 'Cập nhật thành công' };
+  });
+}
+
 export async function getServicePackage(id) {
   const head=(await getPool().request().input('id',dbTypes.Char(10),id).query(`SELECT d.maDonMua AS id,d.maKhachHang AS customerId,k.hoTen AS customerName,
-    k.soDienThoai AS customerPhone,d.maDichVu AS serviceId,s.tenDV AS serviceName,d.ngayMua AS purchaseDate,NULL AS endedAt,
+    k.soDienThoai AS customerPhone,d.maDichVu AS serviceId,s.tenDV AS serviceName,d.ngayMua AS purchaseDate,d.ngayBatDau AS startDate,d.ngayKetThucDuKien AS expectedEndDate,
     s.giaDV AS purchasePrice,d.trangThaiThanhToan AS paymentStatus,d.trangThaiHoanThanh AS completionStatus,d.soBuoiDaThucHien AS sessionsCompleted,
     s.tongSoBuoi AS totalSessions,d.fileTongHop AS summaryFile,d.ghiChu AS note
     FROM dbo.DonMuaDV d JOIN dbo.KhachHang k ON k.maKhachHang=d.maKhachHang JOIN dbo.DichVu s ON s.maDichVu=d.maDichVu WHERE d.maDonMua=@id`)).recordset[0];
@@ -305,7 +355,7 @@ export async function updatePackageSessionResult(packageId,sessionId,body,user) 
   });
 }
 
-export async function confirmPackageSession(packageId,sessionId,user=null) {
+export async function markCustomerConfirmed(packageId,sessionId,user=null) {
   return inTransaction(async transaction=>{
     const row=await packageAndSession(transaction,packageId,sessionId);
     if(row.trangThaiThucHien==='Đã hoàn thành'&&row.xacNhanKH==='Đã xác nhận') {
@@ -340,6 +390,8 @@ export async function confirmPackageSession(packageId,sessionId,user=null) {
       sessionsCompleted:count,totalSessions:total,packageCompleted:isFinished,createSummary,milestone:createSummary?milestone:null,message:'Xác nhận hoàn thành buổi dịch vụ thành công'};
   });
 }
+
+export const confirmPackageSession = markCustomerConfirmed;
 
 export async function listRetailCosmetics(query={}) {
   const result=await getPool().request().query(`SELECT maMyPham AS id,tenMyPham AS name,donViTinh AS unit,giaBan AS price,soLuongTonKho AS stock

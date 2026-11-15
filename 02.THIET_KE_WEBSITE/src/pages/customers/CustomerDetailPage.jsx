@@ -18,7 +18,7 @@ export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete,
   }));
   const activeServices = customer.activeServices ?? [];
   const serviceHistory = customer.serviceHistory ?? [];
-  const visits = serviceHistory.reduce((total, item) => total + Number(item.sessionsCompleted || 0), 0);
+  const visits = [...activeServices, ...serviceHistory].reduce((total, item) => total + Number(item.sessionsCompleted || 0), 0);
 
   return (
     <div className="page-stack customer-detail-page">
@@ -66,17 +66,21 @@ export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete,
 
       <section className="panel customer-detail__section customer-detail__purchases">
         <h2>Sản phẩm mua thêm</h2>
-        <DataTable
-          columns={[
-            { key: 'date', label: 'Ngày mua', width: '16%', align: 'center' },
-            { key: 'product', label: 'Tên sản phẩm', width: '36%' },
-            { key: 'quantity', label: 'Số lượng', width: '14%', align: 'center' },
-            { key: 'price', label: 'Giá', width: '17%', align: 'right', nowrap: true },
-            { key: 'total', label: 'Thành tiền', width: '17%', align: 'right', nowrap: true },
-          ]}
-          rows={purchases}
-          emptyMessage="Chưa có sản phẩm mua thêm"
-        />
+        {purchases.length ? (
+          <DataTable
+            columns={[
+              { key: 'date', label: 'Ngày mua', width: '16%', align: 'center' },
+              { key: 'product', label: 'Tên sản phẩm', width: '36%' },
+              { key: 'quantity', label: 'Số lượng', width: '14%', align: 'center' },
+              { key: 'price', label: 'Giá', width: '17%', align: 'right', nowrap: true },
+              { key: 'total', label: 'Thành tiền', width: '17%', align: 'right', nowrap: true },
+            ]}
+            rows={purchases}
+            emptyMessage="Chưa có sản phẩm mua thêm"
+          />
+        ) : (
+          <p className="customer-detail__empty customer-detail__empty--compact">Chưa có sản phẩm mua thêm</p>
+        )}
       </section>
 
       <section className="panel customer-detail__section">

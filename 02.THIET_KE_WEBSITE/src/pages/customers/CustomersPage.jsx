@@ -54,7 +54,7 @@ export default function CustomersPage({ recordsOnly = false }) {
       .then((customer) => { if (active) setSelectedDetail(customer); })
       .catch((error) => { if (active) setLoadError(error.message); });
     return () => { active = false; };
-  }, [customerId]);
+  }, [customerId, routeParts[1]]);
 
   const filtered = useMemo(
     () => items.filter((customer) => `${customer.id} ${customer.name} ${customer.phone}`.toLowerCase().includes(query.toLowerCase())),

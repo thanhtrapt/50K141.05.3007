@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import Button from '../../components/ui/Button.jsx';
 import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
 import DataTable from '../../components/ui/DataTable.jsx';
-import Modal from '../../components/ui/Modal.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import PageListToolbar from '../../components/ui/PageListToolbar.jsx';
 import Pagination from '../../components/ui/Pagination.jsx';
@@ -102,13 +101,53 @@ export default function OutboundPage() {
   const openDetail = async (record) => {
     try {
       const detail = await apiRequest(`/api/stock-issues/${encodeURIComponent(record.id)}`);
-      setSelected({ ...record, ...detail, date: formatDate(String(detail.issueDate).slice(0, 10)), customer: detail.creator, items: (detail.items ?? []).map((item) => ({ product: item.cosmeticName, lot: item.lotCode, quantity: item.quantity })) });
+      setSelected({ ...record, ...detail, date: formatDate(String(detail.issueDate).slice(0, 10)), customer: detail.creator, items: (detail.items ?? []).map((item) => ({ product: item.cosmeticName, unit: item.unit, lot: item.lotCode, quantity: item.quantity })) });
+      setMode('detail');
     } catch (error) {
       showDialog({ title: 'Không tải được chi tiết phiếu xuất', message: error.message });
     }
   };
 
+  const closeDetail = () => {
+    setSelected(null);
+    setMode('list');
+  };
+
   if (loading) return <div className="panel data-loading" role="status">Đang tải phiếu xuất kho từ SQL…</div>;
+
+  if (mode === 'detail' && selected) {
+    return (
+      <div className="page-stack outbound-detail-page">
+        <PageHeader
+          title="CHI TIẾT PHIẾU XUẤT KHO"
+          actions={<Button variant="secondary" onClick={closeDetail}><ArrowLeft size={16} />Quay lại</Button>}
+        />
+        <section className="panel outbound-detail-panel">
+          <h2>Thông tin chung</h2>
+          <dl className="outbound-detail-panel__facts">
+            <div><dt>Mã phiếu xuất</dt><dd>{selected.id}</dd></div>
+            <div><dt>Người tạo phiếu</dt><dd>{selected.customer}</dd></div>
+            <div><dt>Ngày xuất</dt><dd>{selected.date}</dd></div>
+          </dl>
+          <h2 className="outbound-detail-panel__table-title">Danh sách mỹ phẩm được xuất</h2>
+          <DataTable
+            fitContainer
+            ariaLabel="Danh sách mỹ phẩm được xuất"
+            columns={[
+              { key: 'index', label: 'STT', width: '9%', align: 'center', render: (_, index) => index + 1 },
+              { key: 'product', label: 'Tên sản phẩm', width: '31%' },
+              { key: 'unit', label: 'Đơn vị tính', width: '18%', align: 'center' },
+              { key: 'quantity', label: 'Số lượng', width: '18%', align: 'center' },
+              { key: 'lot', label: 'Lô hàng', width: '24%', align: 'center', nowrap: true },
+            ]}
+            rows={selected.items ?? []}
+            rowKey="cosmeticId"
+            emptyMessage="Phiếu xuất kho chưa có dòng mỹ phẩm."
+          />
+        </section>
+      </div>
+    );
+  }
 
   const columns = [
     { key: 'index', label: 'STT', width: '8%', minWidth: 70, align: 'center', render: (_, index) => index + 1 },
@@ -171,20 +210,6 @@ export default function OutboundPage() {
         <DataTable className="data-table--inventory" columns={columns} rows={pageRecords} rowKey="id" emptyMessage="Không tìm thấy phiếu xuất kho phù hợp!" />
         <div className="panel__footer"><Pagination page={page} pageCount={pageCount} onChange={setPage} /></div>
       </div>
-      <Modal open={Boolean(selected)} title="CHI TIẾT PHIẾU XUẤT KHO" onClose={() => setSelected(null)} size="large">
-        {selected && <div className="detail-content">
-          <dl className="detail-grid"><div><dt>Mã phiếu xuất</dt><dd>{selected.id}</dd></div><div><dt>Người tạo phiếu</dt><dd>{selected.customer}</dd></div><div><dt>Ngày xuất</dt><dd>{selected.date}</dd></div><div><dt>Tổng tiền</dt><dd>{selected.total ? `${new Intl.NumberFormat('vi-VN').format(selected.total)} ₫` : '—'}</dd></div></dl>
-          <DataTable
-            columns={[
-              { key: 'product', label: 'Tên sản phẩm', width: '50%' },
-              { key: 'lot', label: 'Lô hàng', width: '25%', align: 'center' },
-              { key: 'quantity', label: 'Số lượng xuất', width: '25%', align: 'center' },
-            ]}
-            rows={selected.items ?? [{ product: selected.product ?? '', lot: '', quantity: selected.quantity ?? '' }]}
-          />
-          <div className="modal-form-actions"><Button variant="secondary" onClick={() => setSelected(null)}>Đóng</Button></div>
-        </div>}
-      </Modal>
     </div>
   );
 }

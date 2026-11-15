@@ -49,6 +49,17 @@ function dateLabel(date) {
   return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
+function appointmentDateLabels(value) {
+  const datePart = String(value || '').slice(0, 10);
+  const date = new Date(`${datePart}T12:00:00+07:00`);
+  if (Number.isNaN(date.getTime())) return { long: value || '—', full: value || '—' };
+  const options = { timeZone: 'Asia/Ho_Chi_Minh' };
+  return {
+    long: new Intl.DateTimeFormat('vi-VN', { ...options, day: 'numeric', month: 'long', year: 'numeric' }).format(date),
+    full: new Intl.DateTimeFormat('vi-VN', { ...options, weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }).format(date),
+  };
+}
+
 function timePosition(value) {
   const [hours, minutes] = value.split(':').map(Number);
   return (hours - 8) * 2 + minutes / 30;
@@ -293,8 +304,7 @@ export default function AppointmentsPage() {
         {appointmentConflict?.suggestions?.length > 0 && <div className="appointment-conflict-slots"><strong>Giờ trống</strong>{appointmentConflict.suggestions.map((slot) => <button type="button" key={`${slot.startTime}-${slot.endTime}`} onClick={() => { setAppointmentForm((current) => ({ ...current, start: slot.startTime, end: slot.endTime })); setAppointmentConflict(null); }}>{slot.startTime} – {slot.endTime}</button>)}</div>}
       </FeedbackDialog>
 
-      <Modal open={Boolean(selectedAppointment)} title="CHI TIẾT LỊCH HẸN" onClose={() => setSelectedAppointment(null)} size="large">
-        {selectedAppointment && <div className="appointment-detail-panel" aria-labelledby="appointment-detail-title">
+      {selectedAppointment && <aside className="appointment-detail-panel" aria-labelledby="appointment-detail-title">
         <header className="appointment-detail-panel__header">
           <h2 id="appointment-detail-title">CHI TIẾT LỊCH HẸN</h2>
           <button type="button" className="appointment-detail-panel__close" aria-label="Đóng chi tiết lịch hẹn" onClick={() => setSelectedAppointment(null)}>
@@ -305,13 +315,13 @@ export default function AppointmentsPage() {
         <div className="appointment-detail-panel__date">
           <CalendarDays aria-hidden="true" size={23} />
           <div className="appointment-detail-panel__date-copy">
-            <strong>{selectedAppointment.date}</strong>
+            <strong>{appointmentDateLabels(selectedAppointment.date).long}</strong>
             <span>{selectedAppointment.start}–{selectedAppointment.end} · {selectedAppointmentDuration} phút</span>
           </div>
           {canManageAppointments && (
             <ActionGroup className="appointment-detail-panel__actions">
-              <EditButton onClick={() => openEdit(selectedAppointment)} label="Điều chỉnh lịch hẹn" />
-              <DeleteButton onClick={() => setConfirmDeleteOpen(true)} label="Hủy lịch hẹn" />
+              <EditButton onClick={() => openEdit(selectedAppointment)} label="Chỉnh sửa" />
+              <DeleteButton onClick={() => setConfirmDeleteOpen(true)} label="Xóa" />
             </ActionGroup>
           )}
         </div>
@@ -322,7 +332,7 @@ export default function AppointmentsPage() {
           <div><dt>Tên dịch vụ</dt><dd>{selectedAppointment.service}</dd></div>
           <div><dt>Giờ đặt lịch</dt><dd>{selectedAppointment.start}</dd></div>
           <div><dt>Giờ kết thúc</dt><dd>{selectedAppointment.end}</dd></div>
-          <div><dt>Ngày</dt><dd>{selectedAppointment.date}</dd></div>
+          <div><dt>Ngày</dt><dd>{appointmentDateLabels(selectedAppointment.date).full}</dd></div>
         </dl>
 
         <section className="appointment-detail-panel__note">
@@ -345,8 +355,7 @@ export default function AppointmentsPage() {
           setNoteDraft(selectedAppointment.note || '');
           setNoteEditorOpen(true);
         }}><NotebookPen size={17} />Thêm ghi chú</Button>}
-        </div>}
-      </Modal>
+        </aside>}
 
       <Modal open={formOpen} title={editingId ? 'ĐIỀU CHỈNH LỊCH HẸN' : 'TẠO LỊCH HẸN'} onClose={() => setConfirmDiscardOpen(true)} size="large">
         <form className="form-grid" onSubmit={createAppointment} autoComplete="off" noValidate>

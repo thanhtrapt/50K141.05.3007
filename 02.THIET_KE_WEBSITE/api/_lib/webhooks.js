@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { config } from './config.js';
 import { AppError, notFound, unauthorized } from './errors.js';
 import { verifyActionToken } from './security.js';
-import { confirmPackageSession } from './customerService.js';
+import { markCustomerConfirmed } from './customerService.js';
 import { createReview } from './customerService.js';
 import { logInboundEvent } from './notificationService.js';
 
@@ -23,7 +23,7 @@ export async function confirmSessionFromWebhook(req, body) {
   if (!token || token.packageId !== String(data.packageId) || token.sessionId !== String(data.sessionId)) {
     throw unauthorized('Liên kết xác nhận không hợp lệ hoặc đã hết hạn.');
   }
-  const result = await confirmPackageSession(data.packageId, data.sessionId, null);
+  const result = await markCustomerConfirmed(data.packageId, data.sessionId, null);
   await logInboundEvent({
     event: 'SESSION_CONFIRMED',
     recipient: data.phone || null,
@@ -52,9 +52,13 @@ function requireDevelopment() {
   if (config.nodeEnv !== 'development') throw notFound('Không tìm thấy API phù hợp.');
 }
 
+function requireZaloSimulationEnabled() {
+  if (!config.enableZaloSimulation) throw notFound('Không tìm thấy API phù hợp.');
+}
+
 export async function simulateConfirmedSession(body, user) {
-  requireDevelopment();
-  const result = await confirmPackageSession(String(body.packageId || ''), String(body.sessionId || ''), user);
+  requireZaloSimulationEnabled();
+  const result = await markCustomerConfirmed(String(body.packageId || ''), String(body.sessionId || ''), user);
   return { ...result, simulated: true };
 }
 
