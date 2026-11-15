@@ -61,11 +61,11 @@ export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete,
         <h2>Sản phẩm mua thêm</h2>
         <DataTable
           columns={[
-            { key: 'date', label: 'Ngày mua', width: '18%' },
-            { key: 'product', label: 'Tên sản phẩm', width: '30%' },
-            { key: 'quantity', label: 'Số lượng', width: '16%' },
-            { key: 'price', label: 'Giá', width: '16%' },
-            { key: 'total', label: 'Thành tiền', width: '20%' },
+            { key: 'date', label: 'Ngày mua', width: '16%', align: 'center' },
+            { key: 'product', label: 'Tên sản phẩm', width: '34%' },
+            { key: 'quantity', label: 'Số lượng', width: '14%', align: 'center' },
+            { key: 'price', label: 'Giá', width: '18%', align: 'right' },
+            { key: 'total', label: 'Thành tiền', width: '18%', align: 'right' },
           ]}
           rows={purchases}
           emptyMessage="Chưa có sản phẩm mua thêm"

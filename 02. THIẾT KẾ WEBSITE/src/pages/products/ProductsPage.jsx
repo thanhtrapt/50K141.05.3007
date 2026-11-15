@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ImagePlus, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Button from '../../components/ui/Button.jsx';
 import DataTable from '../../components/ui/DataTable.jsx';
@@ -9,6 +9,7 @@ import PageListToolbar from '../../components/ui/PageListToolbar.jsx';
 import Pagination from '../../components/ui/Pagination.jsx';
 import SearchBox from '../../components/ui/SearchBox.jsx';
 import SelectField from '../../components/ui/SelectField.jsx';
+import TableThumb from '../../components/ui/TableThumb.jsx';
 import { formatCurrency, products as initialProducts } from '../../data/mockData.js';
 import ProductDetailPage from './ProductDetailPage.jsx';
 import ProductFormPage from './ProductFormPage.jsx';
@@ -85,11 +86,11 @@ export default function ProductsPage() {
   }
 
   const columns = [
-    { key: 'id', label: 'Mã MP', width: '12%' },
-    { key: 'name', label: 'Tên mỹ phẩm', width: '30%', render: (product) => <button type="button" className="table-link" onClick={() => navigate(`${basePath}/${product.id}`)}>{product.name}</button> },
-    { key: 'image', label: 'Hình ảnh minh họa', width: '22%', render: (product) => product.image ? <img className="product-thumbnail" src={product.image} alt={product.name} /> : <span className="product-thumbnail product-thumbnail--empty" aria-label="Chưa có hình ảnh"><ImagePlus size={18} /></span> },
-    { key: 'stock', label: 'Tồn kho', width: '14%' },
-    { key: 'price', label: 'Giá bán', width: '22%', render: (product) => formatCurrency(product.price) },
+    { key: 'id', label: 'Mã MP', width: '12%', align: 'center' },
+    { key: 'name', label: 'Tên mỹ phẩm', width: '32%', render: (product) => <button type="button" className="table-link" onClick={() => navigate(`${basePath}/${product.id}`)}>{product.name}</button> },
+    { key: 'image', label: 'Hình ảnh minh họa', width: '16%', align: 'center', render: (product) => <TableThumb src={product.image} alt={product.name} /> },
+    { key: 'stock', label: 'Tồn kho', width: '16%', align: 'center' },
+    { key: 'price', label: 'Giá bán', width: '24%', align: 'right', render: (product) => formatCurrency(product.price) },
   ];
 
   return (

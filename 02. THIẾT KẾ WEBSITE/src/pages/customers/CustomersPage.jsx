@@ -86,10 +86,10 @@ export default function CustomersPage({ recordsOnly = false }) {
   }
 
   const columns = [
-    { key: 'id', label: 'Mã khách hàng', width: '22%' },
+    { key: 'id', label: 'Mã khách hàng', width: '22%', align: 'center' },
     { key: 'name', label: 'Họ và tên', width: '30%', render: (customer) => <button type="button" className="table-link" onClick={() => openDetail(customer)}>{customer.name}</button> },
-    { key: 'birthday', label: 'Ngày sinh', width: '22%' },
-    { key: 'phone', label: 'Số điện thoại', width: '26%' },
+    { key: 'birthday', label: 'Ngày sinh', width: '22%', align: 'center' },
+    { key: 'phone', label: 'Số điện thoại', width: '26%', align: 'center' },
   ];
 
   return (

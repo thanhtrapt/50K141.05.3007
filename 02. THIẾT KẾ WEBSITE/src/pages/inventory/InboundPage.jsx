@@ -197,10 +197,10 @@ export default function InboundPage() {
   };
 
   const columns = [
-    { key: 'index', label: 'STT', width: '10%', render: (_, index) => index + 1 },
-    { key: 'id', label: 'Mã phiếu nhập', width: '34%', render: (record) => <button type="button" className="table-link" onClick={() => navigate(`/phieu-nhap-kho/${record.id}`)}>{record.id}</button> },
-    { key: 'date', label: 'Ngày nhập', width: '25%' },
-    { key: 'total', label: 'Tổng tiền', width: '31%', render: (record) => formatCurrency(record.total) },
+    { key: 'index', label: 'STT', width: '10%', align: 'center', render: (_, index) => index + 1 },
+    { key: 'id', label: 'Mã phiếu nhập', width: '34%', align: 'center', render: (record) => <button type="button" className="table-link" onClick={() => navigate(`/phieu-nhap-kho/${record.id}`)}>{record.id}</button> },
+    { key: 'date', label: 'Ngày nhập', width: '25%', align: 'center' },
+    { key: 'total', label: 'Tổng tiền', width: '31%', align: 'right', render: (record) => formatCurrency(record.total) },
   ];
 
   if (isCreate) {
@@ -332,13 +332,13 @@ export default function InboundPage() {
     }
     const detailItems = selectedReceipt.items ?? [];
     const detailColumns = [
-      { key: 'index', label: 'STT', width: '7%', render: (_, index) => index + 1 },
+      { key: 'index', label: 'STT', width: '7%', align: 'center', render: (_, index) => index + 1 },
       { key: 'product', label: 'Tên sản phẩm', width: '24%' },
-      { key: 'unit', label: 'Đơn vị tính', width: '12%' },
-      { key: 'price', label: 'Giá nhập', width: '14%', render: (item) => formatCurrency(item.price) },
-      { key: 'quantity', label: 'Số lượng', width: '12%' },
-      { key: 'lot', label: 'Lô nhập hàng', width: '16%' },
-      { key: 'total', label: 'Thành tiền', width: '15%', render: (item) => formatCurrency(item.price * item.quantity) },
+      { key: 'unit', label: 'Đơn vị tính', width: '12%', align: 'center' },
+      { key: 'price', label: 'Giá nhập', width: '14%', align: 'right', render: (item) => formatCurrency(item.price) },
+      { key: 'quantity', label: 'Số lượng', width: '12%', align: 'center' },
+      { key: 'lot', label: 'Lô nhập hàng', width: '16%', align: 'center' },
+      { key: 'total', label: 'Thành tiền', width: '15%', align: 'right', render: (item) => formatCurrency(item.price * item.quantity) },
     ];
     return (
       <div className="page-stack inbound-detail-page">

@@ -272,6 +272,18 @@
   table-layout: fixed;
 }
 
+.service-form__entries th:nth-child(1) { width: 40%; }
+.service-form__entries th:nth-child(2) { width: 34%; }
+.service-form__entries th:nth-child(3) { width: 18%; }
+.service-form__entries th:nth-child(4) { width: 8%; }
+
+.service-form__entries th:nth-child(3),
+.service-form__entries td:nth-child(3),
+.service-form__entries th:nth-child(4),
+.service-form__entries td:nth-child(4) {
+  text-align: center;
+}
+
 .service-form__entries th,
 .service-form__entries td {
   height: 42px;
@@ -558,13 +570,6 @@
 
 .product-detail-page__lots-heading strong {
   color: #684a35;
-}
-
-.product-thumbnail--empty {
-  display: grid;
-  place-items: center;
-  color: var(--color-primary);
-  background: #fbf3e3;
 }
 
 .visually-hidden {
@@ -977,6 +982,21 @@
   white-space: nowrap;
 }
 
+/* Chuẩn canh lề bảng nhập kho: tiền canh phải, số lượng và thao tác canh giữa. */
+.inbound-lines-table th:nth-child(3),
+.inbound-lines-table td:nth-child(3),
+.inbound-lines-table th:nth-child(5),
+.inbound-lines-table td:nth-child(5) {
+  text-align: right;
+}
+
+.inbound-lines-table th:nth-child(4),
+.inbound-lines-table td:nth-child(4),
+.inbound-lines-table th:nth-child(7),
+.inbound-lines-table td:nth-child(7) {
+  text-align: center;
+}
+
 .product-picker {
   position: relative;
   min-width: 0;
@@ -1275,11 +1295,6 @@
 
 .inbound-detail-panel .data-table tbody td {
   height: 72px;
-  text-align: center;
-}
-
-.inbound-detail-panel .data-table tbody td:nth-child(2) {
-  text-align: left;
 }
 
 .inbound-detail-panel .data-table__empty {

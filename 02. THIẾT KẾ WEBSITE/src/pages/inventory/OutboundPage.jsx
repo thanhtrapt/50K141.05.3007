@@ -72,10 +72,10 @@ export default function OutboundPage() {
   };
 
   const columns = [
-    { key: 'index', label: 'STT', width: '10%', render: (_, index) => index + 1 },
-    { key: 'id', label: 'Mã phiếu xuất', width: '34%', render: (record) => <button type="button" className="table-link" onClick={() => setSelected(record)}>{record.id}</button> },
-    { key: 'date', label: 'Ngày xuất', width: '25%' },
-    { key: 'total', label: 'Tổng tiền', width: '31%', render: (record) => record.total ? `${new Intl.NumberFormat('vi-VN').format(record.total)} ₫` : '—' },
+    { key: 'index', label: 'STT', width: '10%', align: 'center', render: (_, index) => index + 1 },
+    { key: 'id', label: 'Mã phiếu xuất', width: '34%', align: 'center', render: (record) => <button type="button" className="table-link" onClick={() => setSelected(record)}>{record.id}</button> },
+    { key: 'date', label: 'Ngày xuất', width: '25%', align: 'center' },
+    { key: 'total', label: 'Tổng tiền', width: '31%', align: 'right', render: (record) => record.total ? `${new Intl.NumberFormat('vi-VN').format(record.total)} ₫` : '—' },
   ];
 
   if (mode === 'create') {
@@ -128,7 +128,7 @@ export default function OutboundPage() {
       <Modal open={Boolean(selected)} title="CHI TIẾT PHIẾU XUẤT KHO" onClose={() => setSelected(null)} size="large">
         {selected && <div className="detail-content">
           <dl className="detail-grid"><div><dt>Mã phiếu xuất</dt><dd>{selected.id}</dd></div><div><dt>Người tạo phiếu</dt><dd>{selected.customer}</dd></div><div><dt>Ngày xuất</dt><dd>{selected.date}</dd></div><div><dt>Tổng tiền</dt><dd>{selected.total ? `${new Intl.NumberFormat('vi-VN').format(selected.total)} ₫` : '—'}</dd></div></dl>
-          <DataTable columns={[{ key: 'product', label: 'Tên sản phẩm' }, { key: 'lot', label: 'Lô hàng' }, { key: 'quantity', label: 'Số lượng xuất' }]} rows={selected.items ?? [{ product: selected.product ?? '', lot: '', quantity: selected.quantity ?? '' }]} />
+          <DataTable columns={[{ key: 'product', label: 'Tên sản phẩm' }, { key: 'lot', label: 'Lô hàng', align: 'center' }, { key: 'quantity', label: 'Số lượng xuất', align: 'center' }]} rows={selected.items ?? [{ product: selected.product ?? '', lot: '', quantity: selected.quantity ?? '' }]} />
           <div className="modal-form-actions"><Button variant="secondary" onClick={() => setSelected(null)}>Đóng</Button></div>
         </div>}
       </Modal>

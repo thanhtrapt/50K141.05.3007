@@ -146,6 +146,34 @@
   padding: 11px var(--table-cell-padding-inline);
   border-bottom: 1px solid var(--color-border);
   vertical-align: middle;
+  text-align: left;
+}
+
+/* Chuẩn canh lề ô dùng chung: tiêu đề và dữ liệu luôn cùng canh lề. */
+.data-table .data-table__cell--center {
+  text-align: center;
+}
+
+.data-table .data-table__cell--right {
+  text-align: right;
+}
+
+/* Ô ảnh: cố định, canh giữa, không bóp méo, có trạng thái rỗng chuyên nghiệp. */
+.table-thumb {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto;
+  object-fit: contain;
+  background: #fbf3e3;
+  border-radius: 6px;
+}
+
+.table-thumb--empty {
+  display: grid;
+  place-items: center;
+  color: var(--color-primary);
+  background: #fbf3e3;
+  border: 1px dashed #e2cdae;
 }
 
 .data-table thead th {

@@ -21,10 +21,10 @@ export default function ReviewsPage() {
   const pageCount = Math.max(1, Math.ceil(rows.length / 9));
   const pageRows = rows.slice((page - 1) * 9, page * 9);
   const columns = [
-    { key: 'date', label: 'Thời gian đánh giá', width: '22%' },
+    { key: 'date', label: 'Thời gian đánh giá', width: '22%', align: 'center' },
     { key: 'customer', label: 'Họ và tên khách hàng', width: '25%', render: (review) => <button type="button" className="table-link" onClick={() => navigate(`/danh-gia/${review.id}`)}>{review.customer}</button> },
     { key: 'service', label: 'Tên dịch vụ thực hiện', width: '32%' },
-    { key: 'stars', label: 'Mức đánh giá', width: '21%', render: (review) => (
+    { key: 'stars', label: 'Mức đánh giá', width: '21%', align: 'center', render: (review) => (
       <span className="rating-stars" aria-label={`${review.stars} trên 5 sao`}>
         {Array.from({ length: 5 }, (_, index) => <Star key={index} size={17} fill={index < review.stars ? 'currentColor' : 'none'} />)}
       </span>

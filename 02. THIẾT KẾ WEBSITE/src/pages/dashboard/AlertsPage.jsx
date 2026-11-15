@@ -34,20 +34,20 @@ export default function AlertsPage() {
   const pageRows = rows.slice((page - 1) * 8, page * 8);
   const columns = isStock
     ? [
-        { key: 'id', label: 'Mã sản phẩm', width: '14%' },
+        { key: 'id', label: 'Mã sản phẩm', width: '14%', align: 'center' },
         { key: 'name', label: 'Tên sản phẩm', width: '31%' },
         { key: 'category', label: 'Phân loại', width: '19%' },
-        { key: 'stock', label: 'Số lượng tồn kho hiện tại', width: '19%' },
-        { key: 'status', label: 'Trạng thái tồn kho', width: '17%', render: (item) => <StatusBadge tone={item.tone}>{item.status}</StatusBadge> },
+        { key: 'stock', label: 'Số lượng tồn kho hiện tại', width: '19%', align: 'center' },
+        { key: 'status', label: 'Trạng thái tồn kho', width: '17%', align: 'center', render: (item) => <StatusBadge tone={item.tone}>{item.status}</StatusBadge> },
       ]
     : [
-        { key: 'lot', label: 'Mã lô', width: '10%' },
-        { key: 'id', label: 'Mã SP', width: '11%' },
+        { key: 'lot', label: 'Mã lô', width: '10%', align: 'center' },
+        { key: 'id', label: 'Mã SP', width: '11%', align: 'center' },
         { key: 'name', label: 'Tên sản phẩm', width: '21%' },
         { key: 'category', label: 'Phân loại', width: '15%' },
-        { key: 'expiry', label: 'Hạn sử dụng', width: '14%' },
-        { key: 'days', label: 'Số ngày còn lại', width: '14%' },
-        { key: 'status', label: 'Trạng thái', width: '15%', render: (item) => <StatusBadge tone={item.tone}>{item.status}</StatusBadge> },
+        { key: 'expiry', label: 'Hạn sử dụng', width: '14%', align: 'center' },
+        { key: 'days', label: 'Số ngày còn lại', width: '14%', align: 'center' },
+        { key: 'status', label: 'Trạng thái', width: '15%', align: 'center', render: (item) => <StatusBadge tone={item.tone}>{item.status}</StatusBadge> },
       ];
   const heading = isStock ? 'CẢNH BÁO MỸ PHẨM TỒN KHO' : 'CẢNH BÁO HẠN SỬ DỤNG';
   const panelHeading = isStock ? 'Danh sách mỹ phẩm tồn kho' : 'Danh sách mỹ phẩm sắp hết hạn sử dụng';

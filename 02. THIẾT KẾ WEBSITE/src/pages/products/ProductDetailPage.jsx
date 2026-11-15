@@ -49,10 +49,10 @@ export default function ProductDetailPage({ product, onBack, onEdit, onDelete })
         </div>
         <DataTable
           columns={[
-            { key: 'lot', label: 'Lô', width: '22%' },
-            { key: 'made', label: 'Ngày sản xuất', width: '27%' },
-            { key: 'expiry', label: 'Hạn sử dụng', width: '27%' },
-            { key: 'stock', label: 'Tồn kho', width: '24%' },
+            { key: 'lot', label: 'Lô', width: '22%', align: 'center' },
+            { key: 'made', label: 'Ngày sản xuất', width: '26%', align: 'center' },
+            { key: 'expiry', label: 'Hạn sử dụng', width: '26%', align: 'center' },
+            { key: 'stock', label: 'Tồn kho', width: '26%', align: 'center' },
           ]}
           rows={lots}
           rowKey="lot"

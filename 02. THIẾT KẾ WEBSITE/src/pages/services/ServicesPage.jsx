@@ -96,10 +96,10 @@ export default function ServicesPage() {
   }
 
   const columns = [
-    { key: 'index', label: 'STT', width: '7%', render: (_, index) => index + 1 },
-    { key: 'id', label: 'Mã dịch vụ', width: '14%' },
+    { key: 'index', label: 'STT', width: '7%', align: 'center', render: (_, index) => index + 1 },
+    { key: 'id', label: 'Mã dịch vụ', width: '14%', align: 'center' },
     { key: 'name', label: 'Tên dịch vụ', width: '43%', render: (service) => <button type="button" className="table-link" onClick={() => navigate(`${basePath}/${service.id}`)}>{service.name}</button> },
-    { key: 'price', label: 'Giá dịch vụ', width: '36%', render: (service) => formatCurrency(service.price) },
+    { key: 'price', label: 'Giá dịch vụ', width: '36%', align: 'right', render: (service) => formatCurrency(service.price) },
   ];
 
   return (

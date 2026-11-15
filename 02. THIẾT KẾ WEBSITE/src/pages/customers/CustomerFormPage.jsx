@@ -88,11 +88,11 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave }) {
           </div>
           <DataTable
             columns={[
-              { key: 'date', label: 'Ngày mua', width: '20%' },
-              { key: 'product', label: 'Tên sản phẩm', width: '30%' },
-              { key: 'quantity', label: 'Số lượng', width: '15%' },
-              { key: 'price', label: 'Giá', width: '15%' },
-              { key: 'total', label: 'Thành tiền', width: '20%' },
+              { key: 'date', label: 'Ngày mua', width: '16%', align: 'center' },
+              { key: 'product', label: 'Tên sản phẩm', width: '34%' },
+              { key: 'quantity', label: 'Số lượng', width: '14%', align: 'center' },
+              { key: 'price', label: 'Giá', width: '18%', align: 'right' },
+              { key: 'total', label: 'Thành tiền', width: '18%', align: 'right' },
             ]}
             rows={purchases}
             rowKey="id"
