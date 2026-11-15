@@ -58,14 +58,22 @@ test('mật khẩu được băm và chỉ mật khẩu ban đầu xác thực',
 });
 
 test('JWT và action token từ chối chữ ký sai, sai mục đích và hết hạn',()=>{
+  // Đổi ký tự đầu của phần chữ ký sang ký tự Base64URL khác để byte chữ ký chắc chắn thay đổi.
+  const tamper=(token)=>{
+    const parts=token.split('.');
+    const signature=parts.at(-1);
+    const replacement=signature[0]==='A'?'B':'A';
+    parts[parts.length-1]=`${replacement}${signature.slice(1)}`;
+    return parts.join('.');
+  };
   const jwt=signToken({id:'TK00000001',phone:'0912345678',role:'OWNER'});
   assert.equal(verifyToken(jwt)?.sub,'TK00000001');
-  assert.equal(verifyToken(`${jwt.slice(0,-1)}x`),null);
+  assert.equal(verifyToken(tamper(jwt)),null);
   const action=signActionToken('session-confirmation',{packageId:'PK00000001'},60);
   assert.equal(verifyActionToken(action,'session-confirmation')?.packageId,'PK00000001');
   assert.equal(verifyActionToken(action,'service-review'),null);
   assert.equal(verifyActionToken(signActionToken('session-confirmation',{},-1),'session-confirmation'),null);
-  assert.equal(verifyActionToken(`${action}x`,'session-confirmation'),null);
+  assert.equal(verifyActionToken(tamper(action),'session-confirmation'),null);
 });
 
 test('readBody ưu tiên req.body đã parse sẵn của Vercel thay vì đọc stream đã cạn',async()=>{
