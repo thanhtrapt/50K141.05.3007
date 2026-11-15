@@ -59,7 +59,10 @@ function quoteIdentifiers(sql) {
 
 export function toPostgresSql(source) {
   let sql = String(source).trim().replace(/^;+\s*/, '');
-  sql = sql.replace(/\bN(?=')/gi, '');
+  // Chỉ bỏ tiền tố Unicode N của SQL Server khi N đứng đầu một token.
+  // Không dùng cờ `i`: chữ "n" thường cuối từ tiếng Việt trước dấu nháy
+  // (ví dụ N'Chưa thực hiện') sẽ bị cắt mất nếu khớp không phân biệt hoa/thường.
+  sql = sql.replace(/(^|[^A-Za-z0-9_$])N(?=')/g, '$1');
   sql = sql.replace(/dbo\.([A-Za-z_][A-Za-z0-9_]*)/gi, (_match, table) => `public.${table.toLowerCase()}`);
   sql = sql.replace(/\s+WITH\s*\(\s*(?:UPDLOCK|HOLDLOCK|READPAST|ROWLOCK)(?:\s*,\s*(?:UPDLOCK|HOLDLOCK|READPAST|ROWLOCK))*\s*\)/gi, '');
   sql = sql.replace(/\bSYSDATETIME\s*\(\s*\)/gi, 'CURRENT_TIMESTAMP');

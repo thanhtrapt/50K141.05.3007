@@ -31,7 +31,7 @@ export default function ProductsPage() {
   const productId = isCreate ? null : routeParts[0] ?? null;
   const record = items.find((product) => product.id === editingId);
   const selected = items.find((product) => product.id === productId);
-  const nextId = `MP${String(items.length + 1).padStart(3, '0')}`;
+  const nextId = `MP${String(items.length + 1).padStart(8, '0')}`;
 
   const filtered = useMemo(() => items.filter((item) => {
     const matchesQuery = `${item.id} ${item.name}`.toLowerCase().includes(query.toLowerCase());

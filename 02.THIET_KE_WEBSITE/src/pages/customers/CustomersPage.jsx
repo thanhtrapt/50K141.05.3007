@@ -27,7 +27,7 @@ export default function CustomersPage({ recordsOnly = false }) {
   const customerId = !isCreate && routeParts[0] !== 'undefined' ? routeParts[0] : null;
   const record = items.find((customer) => customer.id === editingId);
   const selected = items.find((customer) => customer.id === customerId);
-  const nextId = `KH${String(items.length + 1).padStart(3, '0')}`;
+  const nextId = `KH${String(items.length + 1).padStart(8, '0')}`;
 
   const filtered = useMemo(
     () => items.filter((customer) => `${customer.id} ${customer.name} ${customer.phone}`.toLowerCase().includes(query.toLowerCase())),

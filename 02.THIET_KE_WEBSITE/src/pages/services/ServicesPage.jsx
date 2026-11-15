@@ -34,7 +34,7 @@ export default function ServicesPage() {
   const sessionNumber = routeParts[1] === 'buoi' ? Number(routeParts[2]) : null;
   const record = items.find((service) => service.id === editingId);
   const selected = items.find((service) => service.id === serviceId);
-  const nextId = `DV${String(items.length + 1).padStart(3, '0')}`;
+  const nextId = `DV${String(items.length + 1).padStart(8, '0')}`;
 
   const filtered = useMemo(
     () => items.filter((service) => `${service.id} ${service.name}`.toLowerCase().includes(query.toLowerCase())),

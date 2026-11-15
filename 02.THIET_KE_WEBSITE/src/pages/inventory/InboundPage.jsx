@@ -23,9 +23,9 @@ function blankLine() {
 
 function initialLotCatalog() {
   return {
-    MP002: [
-      { id: '090926-2', status: 'Còn hạn', manufactureDate: '2026-09-01', expiryDate: '2028-09-01', stock: 0 },
-      { id: '050726-3', status: 'Còn hạn', manufactureDate: '2026-06-01', expiryDate: '2028-06-01', stock: 0 },
+    MP00000002: [
+      { id: '090926-002', status: 'Còn hạn', manufactureDate: '2026-09-01', expiryDate: '2028-09-01', stock: 0 },
+      { id: '050726-003', status: 'Còn hạn', manufactureDate: '2026-06-01', expiryDate: '2028-06-01', stock: 0 },
     ],
   };
 }
@@ -39,7 +39,7 @@ function formatDate(value) {
 function toLotCode(date, suffix) {
   if (!date) return '';
   const [year, month, day] = date.split('-');
-  return `${day}${month}${year.slice(-2)}-${suffix}`;
+  return `${day}${month}${year.slice(-2)}-${String(suffix).padStart(3, '0')}`;
 }
 
 function initialForm(records) {
@@ -49,7 +49,7 @@ function initialForm(records) {
     supplier: '',
     paymentStatus: '',
     items: [blankLine()],
-    code: `PNK-${today.replaceAll('-', '')}-${String(records.length + 1).padStart(3, '0')}`,
+    code: `PN${String(records.length + 1).padStart(8, '0')}`,
   };
 }
 
@@ -110,7 +110,7 @@ export default function InboundPage() {
   const addProduct = (event) => {
     event.preventDefault();
     if (!newProductRow || !newProduct.name.trim() || !newProduct.unit) return;
-    const id = `MP${String(products.length + 1).padStart(3, '0')}`;
+    const id = `MP${String(products.length + 1).padStart(8, '0')}`;
     const product = { id, name: newProduct.name.trim(), category: '', stock: 0, price: 0, unit: newProduct.unit };
     setProducts((current) => [...current, product]);
     chooseProduct(newProductRow, product);
@@ -170,7 +170,7 @@ export default function InboundPage() {
       setFormError('Vui lòng chọn sản phẩm, nhập số lượng lớn hơn 0 và chọn lô nhập hàng cho từng dòng.');
       return;
     }
-    const nextNumber = String(records.length + 1).padStart(3, '0');
+    const nextNumber = String(records.length + 1).padStart(8, '0');
     const receiptDate = new Date(`${form.date}T00:00:00`);
     const items = validItems.map((item) => {
       const product = products.find((candidate) => candidate.id === item.productId);
@@ -184,7 +184,7 @@ export default function InboundPage() {
       };
     });
     const receipt = {
-      id: `PNK-${form.date.replaceAll('-', '')}-${nextNumber}`,
+      id: `PN${nextNumber}`,
       date: receiptDate.toLocaleDateString('vi-VN'),
       total: items.reduce((sum, item) => sum + item.price * item.quantity, 0),
       creator: form.supplier,
@@ -212,7 +212,7 @@ export default function InboundPage() {
             <div className="form-grid inventory-meta-grid">
               <TextField label="Mã phiếu nhập" value={form.code} readOnly />
               <TextField label="Người nhập *" value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} required />
-              <TextField label="Ngày nhập *" type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value, code: `PNK-${event.target.value.replaceAll('-', '')}-${String(records.length + 1).padStart(3, '0')}` })} required />
+              <TextField label="Ngày nhập *" type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value, code: `PN${String(records.length + 1).padStart(8, '0')}` })} required />
               <SelectField label="Trạng thái thanh toán *" value={form.paymentStatus} onChange={(event) => setForm({ ...form, paymentStatus: event.target.value })} options={['Chưa thanh toán', 'Đã thanh toán']} required />
             </div>
             <h2 className="inventory-section-title">Danh sách sản phẩm</h2>

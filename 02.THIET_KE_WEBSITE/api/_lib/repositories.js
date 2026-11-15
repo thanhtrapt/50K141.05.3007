@@ -37,6 +37,13 @@ const codeTables={
   CB:{ table:'CT_DonGhiNhanBan', column:'maCT_Don' }, CD:{ table:'CT_DichVu', column:'maCT_DichVu' }, CM:{ table:'CT_DonMua', column:'maCT_DonMua' },
 };
 
+// Khóa tư vấn theo phạm vi sinh mã. Khóa tự giải phóng khi transaction kết thúc
+// (COMMIT/ROLLBACK), nên không bị treo nếu giao dịch thất bại.
+async function lockCodeScope(request, scope) {
+  await request.input('lockName',dbTypes.VarChar(64),scope)
+    .query("SELECT pg_advisory_xact_lock(hashtext(@lockName)::bigint) AS \"locked\"");
+}
+
 export async function nextCode(prefix, transaction) {
   const config=codeTables[prefix];
   if(!config) throw new Error('Mã định danh không được cấu hình.');
@@ -45,6 +52,10 @@ export async function nextCode(prefix, transaction) {
   const r=requestFor(transaction);
   // Tên bảng/cột để nguyên dạng viết hoa trong cấu hình; lớp PostgreSQL sẽ
   // chuyển thành identifier không quote (lowercase) đúng như schema Supabase.
+  // Khóa + đọc MAX trong cùng transaction bảo đảm hai lần tạo đồng thời không
+  // nhận cùng một số thứ tự; nếu vẫn xảy ra xung đột tuần tự hóa, inTransaction
+  // sẽ tự chạy lại giao dịch.
+  if(transaction) await lockCodeScope(r,`code:${config.table}`);
   const result=await r.query(`SELECT COALESCE(MAX(NULLIF(regexp_replace(RIGHT(RTRIM(${config.column}),${suffixWidth}), '[^0-9]', '', 'g'), '')::integer),0)+1 AS "nextValue"
     FROM public.${config.table}`);
   return formatEntityCode(prefix,result.recordset[0].nextValue);
@@ -60,6 +71,7 @@ export function formatEntityCode(prefix,sequence,width=10) {
 export async function nextLotCode(receiptDate, transaction) {
   const day=receiptDate.slice(8,10)+receiptDate.slice(5,7)+receiptDate.slice(2,4);
   const r=requestFor(transaction);
+  if(transaction) await lockCodeScope(r,'code:LoHang');
   const result=await r.input('prefix',dbTypes.VarChar(7),`${day}-`).query(`SELECT COALESCE(MAX(NULLIF(regexp_replace(RIGHT(RTRIM(maLo),3), '[^0-9]', '', 'g'), '')::integer),0)+1 AS "nextValue"
     FROM public.LoHang WHERE maLo LIKE @prefix || '%'`);
   return formatLotCode(receiptDate,result.recordset[0].nextValue);

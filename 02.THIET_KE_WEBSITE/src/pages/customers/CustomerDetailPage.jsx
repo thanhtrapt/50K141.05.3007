@@ -75,7 +75,7 @@ export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete,
       <section className="panel customer-detail__section">
         <div className="customer-detail__section-heading">
           <h2>Lịch sử dịch vụ</h2>
-          <Link className="text-link" to="/dich-vu/DV002">Xem chi tiết ›</Link>
+          <Link className="text-link" to="/dich-vu/DV00000002">Xem chi tiết ›</Link>
         </div>
         <p>Buổi 2 · Đã hoàn thành · 21/10/2026</p>
       </section>

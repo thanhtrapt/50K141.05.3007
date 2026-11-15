@@ -12,13 +12,13 @@ import TextField from '../../components/ui/TextField.jsx';
 import { outboundRecords as initialRecords, products } from '../../data/mockData.js';
 
 const lotCatalog = [
-  { id: 'L-20261021-01', productId: 'MP001', expiry: '2028-10-21', stock: 24 },
-  { id: 'L-20260915-02', productId: 'MP002', expiry: '2028-09-15', stock: 18 },
-  { id: 'L-20260820-03', productId: 'MP003', expiry: '2028-08-20', stock: 12 },
+  { id: '211026-001', productId: 'MP00000001', expiry: '2028-10-21', stock: 24 },
+  { id: '150926-002', productId: 'MP00000002', expiry: '2028-09-15', stock: 18 },
+  { id: '200826-003', productId: 'MP00000003', expiry: '2028-08-20', stock: 12 },
 ];
 const emptyLine = () => ({ product: '', lot: '', quantity: '' });
 const emptyForm = () => ({ date: '', recipient: '', lines: [emptyLine()] });
-const unitByProduct = { MP001: 'Chai', MP002: 'Chai', MP003: 'Hũ', MP004: 'Gói', MP005: 'Chai', MP006: 'Chai', MP007: 'Hũ', MP008: 'Chai' };
+const unitByProduct = { MP00000001: 'Chai', MP00000002: 'Chai', MP00000003: 'Hũ', MP00000004: 'Gói', MP00000005: 'Chai', MP00000006: 'Chai', MP00000007: 'Hũ', MP00000008: 'Chai' };
 
 function formatDate(value) {
   if (!value) return '';
@@ -40,7 +40,7 @@ export default function OutboundPage() {
 
   const openCreate = () => {
     const today = new Date().toISOString().slice(0, 10).replaceAll('-', '');
-    setCode(`PXK-${today}-${String(records.length + 1).padStart(3, '0')}`);
+    setCode(`PX${String(records.length + 1).padStart(8, '0')}`);
     setForm(emptyForm());
     setMode('create');
   };
