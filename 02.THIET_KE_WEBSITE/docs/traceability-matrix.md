@@ -1,6 +1,6 @@
 # Ma trận truy vết SRS đến API và kiểm thử
 
-Ma trận nối từng Use Case với API, module xử lý và test đang có. `IT-WORKFLOW` chạy qua migration/seed trên CSDL SQL Server tạm, sau đó chạy HTTP server để xác nhận JWT/RBAC. Các test tích hợp không sửa `HuongSpaDB`.
+Ma trận nối từng Use Case với API, module xử lý và test đang có. Kiểm thử kết nối Supabase là chỉ đọc; không tạo database, migration, seed hoặc sửa dữ liệu hiện hữu.
 
 | Use Case | Business Rule / luồng chính | Endpoint | Tệp xử lý | Test |
 |---|---|---|---|---|
@@ -9,9 +9,12 @@ Ma trận nối từng Use Case với API, module xử lý và test đang có. `
 | UC 1.2 — Sửa hồ sơ | BR-1.2-01…03: thông tin bắt buộc, số điện thoại và mã không đổi | `PUT /api/customers/:id` | `customerService.js` | `UT-RULES-CUSTOMER`, `IT-WORKFLOW` |
 | UC 1.3 — Xóa hồ sơ | Bảo toàn khách hàng có lịch sử/giao dịch liên quan | `DELETE /api/customers/:id` | `customerService.js` | `IT-WORKFLOW` |
 | UC 1.4 — Tạo hồ sơ | BR-1.4-01…03: mã tự sinh, số lần hủy do hệ thống quản lý, trạng thái rỗng | `POST /api/customers` | `customerService.js`, `repositories.js` | `UT-RULES-CUSTOMER`, `IT-WORKFLOW` |
-| UC 1.5 — Tổng hợp quá trình | Tạo PDF ở mốc giữa/cuối, tiếng Việt và ảnh khi khách xác nhận | `GET /api/service-packages/:packageId`, webhook xác nhận | `pdfSummaryService.js`, `notificationService.js`, `customerService.js` | `IT-WORKFLOW` |
-| UC 1.6 — Theo dõi liệu trình | Máy trạng thái buổi, kết quả/ảnh, xác nhận khách, số buổi và PDF | `POST /api/service-packages/:packageId/sessions/:sessionId/{start,complete}`, `POST /api/webhooks/n8n/session-confirmed` | `customerService.js`, `notificationService.js` | `IT-WORKFLOW` |
-| UC 1.7 — Đánh giá | BR-1.7-01: mức sao từ 1 đến 5; lưu đánh giá | `GET,POST /api/reviews`, `POST /api/webhooks/n8n/review-submitted` | `customerService.js`, `notificationService.js` | `UT-RULES-REVIEW`, `IT-WORKFLOW` |
+| UC 1.5 — Tổng hợp quá trình | Tạo PDF ở mốc giữa/cuối, tiếng Việt và ảnh khi khách xác nhận | `GET /api/service-packages/:packageId`, webhook xác nhận | `pdfSummaryService.js`, 
+otificationService.js`, `customerService.js` | `IT-WORKFLOW` |
+| UC 1.6 — Theo dõi liệu trình | Máy trạng thái buổi, kết quả/ảnh, xác nhận khách, số buổi và PDF | `POST /api/service-packages/:packageId/sessions/:sessionId/{start,complete}`, `POST /api/webhooks/n8n/session-confirmed` | `customerService.js`, 
+otificationService.js` | `IT-WORKFLOW` |
+| UC 1.7 — Đánh giá | BR-1.7-01: mức sao từ 1 đến 5; lưu đánh giá | `GET,POST /api/reviews`, `POST /api/webhooks/n8n/review-submitted` | `customerService.js`, 
+otificationService.js` | `UT-RULES-REVIEW`, `IT-WORKFLOW` |
 | UC 1.8 — Sản phẩm mua thêm | FEFO/FIFO, kiểm tồn trong transaction, chống trừ quá số lượng và ghi đơn | `GET /api/retail-products`, `POST /api/customers/:id/retail-sales` | `customerService.js`, `stockService.js` | `IT-WORKFLOW` (FEFO và hai giao dịch đồng thời) |
 | UC 2.1 — Xem mỹ phẩm | Danh sách/chi tiết và lô được sắp theo hạn dùng | `GET /api/cosmetics`, `GET /api/cosmetics/:id`, `GET /api/lots` | `stockService.js` | `IT-WORKFLOW` |
 | UC 2.2 — Tạo mỹ phẩm | BR-2.2-01…04: tên duy nhất/bắt buộc, mã tự sinh, giá không âm, lỗi theo trường | `POST /api/cosmetics` | `stockService.js`, `repositories.js` | `UT-RULES-COSMETIC`, `IT-WORKFLOW` |
@@ -34,8 +37,8 @@ Ma trận nối từng Use Case với API, module xử lý và test đang có. `
 
 ## Test được chạy
 
-- `npm test`: 18 unit test đã đạt; gồm quy tắc trường, token, mật khẩu, ngày, mã định danh, gợi ý khung giờ và độ phủ OpenAPI/RBAC.
-- `npm run test:integration`: một luồng tích hợp SQL Server đã đạt; tạo CSDL dùng một lần, áp dụng migration/seed, chạy CRUD/nhập-xuất/bán FEFO/cạnh tranh tồn, lịch hẹn/blacklist, máy trạng thái buổi, PDF, đánh giá và khởi động HTTP server để kiểm tra phân quyền; CSDL được dọn sau khi chạy.
+- `npm test`: chạy unit test nghiệp vụ, định tuyến, PostgreSQL và RBAC.
+- `npm run test:integration`: kiểm tra kết nối Supabase bằng truy vấn chỉ đọc; tự bỏ qua nếu chưa có `DATABASE_URL`.
 
 ## Giới hạn độ phủ hiện tại
 

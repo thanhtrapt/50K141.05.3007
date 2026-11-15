@@ -1,107 +1,65 @@
-import { createRequire } from 'node:module';
+import pg from 'pg';
 import { config } from './config.js';
+import { createPoolOptions, PgRequest } from './postgres.js';
 
-const require = createRequire(import.meta.url);
-let driver;
-
-// `mssql` (driver thuần JS) dùng được trên mọi môi trường, `mssql/msnodesqlv8.js`
-// chỉ cần cho Windows Authentication khi phát triển trên máy có SQL Server cục bộ.
-function driverModule() {
-  if (driver) return driver;
-  if (config.sqlAuth === 'windows') {
-    try {
-      driver = require('mssql/msnodesqlv8.js');
-    } catch {
-      throw new Error('Không tải được driver msnodesqlv8. Cài dependency này hoặc dùng SQL_AUTH=sql.');
-    }
-  } else {
-    driver = require('mssql');
-  }
-  return driver;
-}
-
-// Proxy để các module khác vẫn dùng `sql.ConnectionPool`, `sqlTypes.NVarChar`...
-// mà không nạp driver native ngay khi import (quan trọng trên Vercel/Linux).
-export const sql = new Proxy({}, { get: (_target, key) => driverModule()[key] });
-export const sqlTypes = sql;
-
-function baseOptions() {
-  return {
-    server: config.sqlServer,
-    driver: 'ODBC Driver 18 for SQL Server',
-    ...(config.sqlPort ? { port: config.sqlPort } : {}),
-    ...(config.sqlAuth === 'sql' ? { user: config.sqlUser, password: config.sqlPassword } : {}),
-    options: {
-      encrypt: config.sqlEncrypt,
-      trustServerCertificate: config.sqlTrustServerCertificate,
-      trustedConnection: config.sqlAuth === 'windows',
-      enableArithAbort: true,
-    },
-    pool: { max: config.sqlPoolMax, min: 0, idleTimeoutMillis: 30000 },
-    requestTimeout: 30000,
-    connectionTimeout: 15000,
-  };
-}
-
+const { Pool } = pg;
 let pool;
 let connecting;
 
+class PoolFacade {
+  request() { return new PgRequest(pool); }
+}
+const facade = new PoolFacade();
+
 export async function connectDatabase() {
-  if (pool?.connected) return pool;
+  if (pool) return facade;
   if (!connecting) {
-    connecting = openPool().finally(() => {
-      connecting = undefined;
-    });
+    connecting = (async () => {
+      if (!config.databaseUrl) throw new Error('DATABASE_URL chưa được cấu hình cho Supabase PostgreSQL.');
+      const nextPool = new Pool(createPoolOptions());
+      nextPool.on('error', (error) => console.error('Lỗi kết nối Supabase PostgreSQL:', error.message));
+      await nextPool.query('SELECT 1');
+      pool = nextPool;
+      return facade;
+    })().finally(() => { connecting = undefined; });
   }
   return connecting;
 }
 
-async function openPool() {
-  const mssql = driverModule();
-  if (!['windows', 'sql'].includes(config.sqlAuth)) throw new Error('SQL_AUTH phải là windows hoặc sql trong biến môi trường.');
-  if (config.sqlAuth === 'sql' && (!config.sqlUser || !config.sqlPassword)) {
-    throw new Error('Cần cấu hình SQL_USER và SQL_PASSWORD trong biến môi trường.');
-  }
-  const adminPool = await new mssql.ConnectionPool({ ...baseOptions(), database: 'master' }).connect();
-  try {
-    await adminPool.request().input('databaseName', mssql.NVarChar(128), config.sqlDatabase)
-      .query(`IF DB_ID(@databaseName) IS NULL
-      BEGIN
-        DECLARE @createDatabaseSql NVARCHAR(MAX)=N'CREATE DATABASE '+QUOTENAME(@databaseName);
-        EXEC sys.sp_executesql @createDatabaseSql;
-      END`);
-  } finally {
-    await adminPool.close();
-  }
-  pool = await new mssql.ConnectionPool({ ...baseOptions(), database: config.sqlDatabase }).connect();
-  return pool;
-}
-
 export function getPool() {
-  if (!pool?.connected) throw new Error('Cơ sở dữ liệu chưa kết nối.');
-  return pool;
+  if (!pool) throw new Error('Cơ sở dữ liệu Supabase chưa kết nối.');
+  return facade;
 }
 
 export async function closeDatabase() {
-  if (pool?.connected) await pool.close();
+  const current = pool;
   pool = undefined;
+  if (current) await current.end();
 }
 
 export async function inTransaction(work) {
-  const mssql = driverModule();
-  const transaction = new mssql.Transaction(getPool());
-  await transaction.begin(mssql.ISOLATION_LEVEL.SERIALIZABLE);
+  const currentPool = await connectDatabase();
+  const client = await pool.connect();
+  await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
   try {
-    const result = await work(transaction);
-    await transaction.commit();
+    const result = await work({ request: () => new PgRequest(client) });
+    await client.query('COMMIT');
     return result;
   } catch (error) {
-    await transaction.rollback().catch(() => {});
+    await client.query('ROLLBACK').catch(() => {});
     throw error;
+  } finally {
+    client.release();
   }
 }
 
 export function requestFor(transaction) {
-  const mssql = driverModule();
-  return transaction ? new mssql.Request(transaction) : getPool().request();
+  return transaction ? transaction.request() : getPool().request();
 }
+
+export const dbTypes = new Proxy({ MAX: -1 }, {
+  get(target, key) {
+    if (key in target) return target[key];
+    return (..._args) => String(key);
+  },
+});

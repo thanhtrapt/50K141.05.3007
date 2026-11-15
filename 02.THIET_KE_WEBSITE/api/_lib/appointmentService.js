@@ -1,4 +1,4 @@
-import { getPool,inTransaction,requestFor,sqlTypes } from './database.js';
+import { getPool,inTransaction,requestFor,dbTypes } from './database.js';
 import { AppError,badRequest,notFound } from './errors.js';
 import { insertAudit,nextCode } from './repositories.js';
 import { normalizeVietnamese,paginate } from './utils.js';
@@ -20,7 +20,7 @@ async function settings(transaction) {
 }
 
 async function appointmentSession(customerId,sessionId,transaction) {
-  const row=(await requestFor(transaction).input('customer',sqlTypes.Char(10),customerId).input('session',sqlTypes.Char(10),sessionId)
+  const row=(await requestFor(transaction).input('customer',dbTypes.Char(10),customerId).input('session',dbTypes.Char(10),sessionId)
     .query(`SELECT c.maCT_DonMua AS sessionId,c.maDonMua AS packageId,d.maKhachHang AS customerId,d.trangThaiHoanThanh AS packageStatus,
       COALESCE(c.thoiGianThucHienSnapshot,t.thoiGianThucHien) AS durationMinutes,COALESCE(c.tenBuoiSnapshot,c.tenBuoi,t.tenBuoi) AS sessionName,
       k.hoTen AS customerName,k.soDienThoai AS customerPhone,c.trangThaiThucHien AS sessionStatus
@@ -34,7 +34,7 @@ async function appointmentSession(customerId,sessionId,transaction) {
 }
 
 async function busyAppointments(date,excludeId,transaction) {
-  const result=await requestFor(transaction).input('date',sqlTypes.Date,date).input('exclude',sqlTypes.Char(10),excludeId||'').query(`SELECT maLichHen AS id,
+  const result=await requestFor(transaction).input('date',dbTypes.Date,date).input('exclude',dbTypes.Char(10),excludeId||'').query(`SELECT maLichHen AS id,
     CONVERT(varchar(5),gioBatDau,108) AS startTime,CONVERT(varchar(5),gioKetThuc,108) AS endTime,trangThai AS status
     FROM dbo.LichHen WITH (UPDLOCK,HOLDLOCK) WHERE ngayHen=@date AND trangThai NOT IN (N'Đã hủy',N'Hoàn thành') AND maLichHen<>@exclude`);
   return result.recordset.map(row=>({...row,id:row.id.trim(),startMinutes:mins(row.startTime),endMinutes:mins(row.endTime)}));
@@ -86,15 +86,15 @@ async function queueReminder(appointment,session,transaction) {
   const scheduled=due<now?now:due;
   const requestBody={appointmentId:appointment.id,customerId:session.customerId,customerName:session.customerName,phone:session.customerPhone,
     date:appointment.date,startTime:appointment.startTime,endTime:appointment.endTime,remindBeforeMinutes:offset};
-  await requestFor(transaction).input('channel',sqlTypes.NVarChar(30),'ZALO').input('event',sqlTypes.NVarChar(100),'APPOINTMENT_REMINDER')
-    .input('recipient',sqlTypes.NVarChar(100),session.customerPhone).input('request',sqlTypes.NVarChar(sqlTypes.MAX),JSON.stringify(requestBody))
-    .input('appointment',sqlTypes.Char(10),appointment.id).input('due',sqlTypes.DateTime2,scheduled)
+  await requestFor(transaction).input('channel',dbTypes.NVarChar(30),'ZALO').input('event',dbTypes.NVarChar(100),'APPOINTMENT_REMINDER')
+    .input('recipient',dbTypes.NVarChar(100),session.customerPhone).input('request',dbTypes.NVarChar(dbTypes.MAX),JSON.stringify(requestBody))
+    .input('appointment',dbTypes.Char(10),appointment.id).input('due',dbTypes.DateTime2,scheduled)
     .query(`INSERT INTO dbo.NhatKyThongBao(kenh,suKien,nguoiNhan,yeuCau,phanHoi,trangThai,soLanThu,maLichHen,thoiGianGuiDuKien)
       VALUES(@channel,@event,@recipient,@request,NULL,N'Chờ gửi',0,@appointment,@due)`);
 }
 
 async function cancelReminder(appointmentId,transaction) {
-  await requestFor(transaction).input('appointment',sqlTypes.Char(10),appointmentId).query(`UPDATE dbo.NhatKyThongBao SET trangThai=N'Đã hủy',capNhatLuc=SYSDATETIME()
+  await requestFor(transaction).input('appointment',dbTypes.Char(10),appointmentId).query(`UPDATE dbo.NhatKyThongBao SET trangThai=N'Đã hủy',capNhatLuc=SYSDATETIME()
     WHERE maLichHen=@appointment AND suKien=N'APPOINTMENT_REMINDER' AND trangThai IN(N'Chờ gửi',N'Đến hạn')`);
 }
 
@@ -109,7 +109,7 @@ export async function listAppointments(query={}) {
   if(to&&!isDate(to))throw badRequest('Ngày kết thúc không hợp lệ.',[{field:'to',message:'Ngày phải có định dạng YYYY-MM-DD'}]);
   if(from&&to&&from>to)throw badRequest('Khoảng ngày không hợp lệ.',[{field:'to',message:'Ngày kết thúc phải sau ngày bắt đầu'}]);
   const request=getPool().request();
-  if(from)request.input('fromDate',sqlTypes.Date,from);if(to)request.input('toDate',sqlTypes.Date,to);
+  if(from)request.input('fromDate',dbTypes.Date,from);if(to)request.input('toDate',dbTypes.Date,to);
   const result=await request.query(`SELECT h.maLichHen AS id,h.ngayHen AS date,h.gioBatDau AS startTime,h.gioKetThuc AS endTime,h.trangThai AS status,h.ghiChu AS note,
     h.maKhachHang AS customerId,k.hoTen AS customerName,k.soDienThoai AS customerPhone,h.maCT_DonMua AS sessionId,d.maDonMua AS packageId,
     COALESCE(c.tenBuoiSnapshot,c.tenBuoi,t.tenBuoi) AS sessionName
@@ -124,7 +124,7 @@ export async function listAppointments(query={}) {
 }
 
 export async function getAppointment(id,transaction) {
-  const rows=(await requestFor(transaction).input('id',sqlTypes.Char(10),id).query(`SELECT h.maLichHen AS id,h.ngayHen AS date,h.gioBatDau AS startTime,h.gioKetThuc AS endTime,h.trangThai AS status,h.ghiChu AS note,
+  const rows=(await requestFor(transaction).input('id',dbTypes.Char(10),id).query(`SELECT h.maLichHen AS id,h.ngayHen AS date,h.gioBatDau AS startTime,h.gioKetThuc AS endTime,h.trangThai AS status,h.ghiChu AS note,
     h.maKhachHang AS customerId,k.hoTen AS customerName,k.soDienThoai AS customerPhone,h.maCT_DonMua AS sessionId,d.maDonMua AS packageId,
     COALESCE(c.tenBuoiSnapshot,c.tenBuoi,t.tenBuoi) AS sessionName,COALESCE(c.thoiGianThucHienSnapshot,t.thoiGianThucHien) AS durationMinutes
     FROM dbo.LichHen h LEFT JOIN dbo.KhachHang k ON k.maKhachHang=h.maKhachHang LEFT JOIN dbo.CT_DonMua c ON c.maCT_DonMua=h.maCT_DonMua
@@ -170,12 +170,12 @@ export async function createAppointment(body,user) {
   return inTransaction(async transaction=>{
     const config=await settings(transaction);const threshold=Number(config.BLACKLIST_CANCEL_LIMIT||3);
     if(!customerId) {
-      const match=(await requestFor(transaction).input('phone',sqlTypes.VarChar(10),customerPhone).query('SELECT TOP(1) maKhachHang FROM dbo.KhachHang WITH (UPDLOCK,HOLDLOCK) WHERE soDienThoai=@phone')).recordset[0];
+      const match=(await requestFor(transaction).input('phone',dbTypes.VarChar(10),customerPhone).query('SELECT TOP(1) maKhachHang FROM dbo.KhachHang WITH (UPDLOCK,HOLDLOCK) WHERE soDienThoai=@phone')).recordset[0];
       if(!match)throw notFound('Không tìm thấy khách hàng phù hợp!');
       customerId=match.maKhachHang.trim();
     }
     if(!sessionId) {
-      const match=(await requestFor(transaction).input('customer',sqlTypes.Char(10),customerId).input('serviceName',sqlTypes.NVarChar(100),serviceName).query(`SELECT TOP(1) c.maCT_DonMua
+      const match=(await requestFor(transaction).input('customer',dbTypes.Char(10),customerId).input('serviceName',dbTypes.NVarChar(100),serviceName).query(`SELECT TOP(1) c.maCT_DonMua
         FROM dbo.CT_DonMua c WITH (UPDLOCK,HOLDLOCK) JOIN dbo.DonMuaDV d ON d.maDonMua=c.maDonMua
         JOIN dbo.DichVu v ON v.maDichVu=d.maDichVu
         WHERE d.maKhachHang=@customer AND v.tenDV=@serviceName AND c.trangThaiThucHien=N'Chưa thực hiện'
@@ -183,18 +183,18 @@ export async function createAppointment(body,user) {
       if(!match)throw notFound('Không tìm thấy buổi dịch vụ phù hợp!');
       sessionId=match.maCT_DonMua.trim();
     }
-    const customer=(await requestFor(transaction).input('id',sqlTypes.Char(10),customerId).query('SELECT maKhachHang,hoTen,soDienThoai,soLanHuyLich FROM dbo.KhachHang WITH (UPDLOCK,HOLDLOCK) WHERE maKhachHang=@id')).recordset[0];
+    const customer=(await requestFor(transaction).input('id',dbTypes.Char(10),customerId).query('SELECT maKhachHang,hoTen,soDienThoai,soLanHuyLich FROM dbo.KhachHang WITH (UPDLOCK,HOLDLOCK) WHERE maKhachHang=@id')).recordset[0];
     if(!customer)throw notFound('Không tìm thấy khách hàng phù hợp!');
     if(Number(customer.soLanHuyLich)>=threshold)throw err(409,'CUSTOMER_BLACKLISTED','Khách hàng thuộc danh sách đen!');
     const session=await appointmentSession(customerId,sessionId,transaction);
     const slot=await checkSlot({date,startTime,duration:session.durationMinutes,transaction});
-    const duplicate=(await requestFor(transaction).input('session',sqlTypes.Char(10),sessionId).query(`SELECT TOP(1) maLichHen FROM dbo.LichHen WITH (UPDLOCK,HOLDLOCK)
+    const duplicate=(await requestFor(transaction).input('session',dbTypes.Char(10),sessionId).query(`SELECT TOP(1) maLichHen FROM dbo.LichHen WITH (UPDLOCK,HOLDLOCK)
       WHERE maCT_DonMua=@session AND trangThai NOT IN(N'Đã hủy',N'Hoàn thành')`)).recordset[0];
     if(duplicate)throw err(409,'SESSION_ALREADY_SCHEDULED','Buổi dịch vụ đã có lịch hẹn.');
     const id=await nextCode('LH',transaction);
-    await requestFor(transaction).input('id',sqlTypes.Char(10),id).input('date',sqlTypes.Date,date).input('start',sqlTypes.VarChar(8),`${startTime}:00`)
-      .input('end',sqlTypes.VarChar(8),`${slot.endTime}:00`).input('status',sqlTypes.NVarChar(50),'Chờ xác nhận')
-      .input('note',sqlTypes.NVarChar(200),note).input('session',sqlTypes.Char(10),sessionId).input('user',sqlTypes.Char(10),user.id).input('customer',sqlTypes.Char(10),customerId)
+    await requestFor(transaction).input('id',dbTypes.Char(10),id).input('date',dbTypes.Date,date).input('start',dbTypes.VarChar(8),`${startTime}:00`)
+      .input('end',dbTypes.VarChar(8),`${slot.endTime}:00`).input('status',dbTypes.NVarChar(50),'Chờ xác nhận')
+      .input('note',dbTypes.NVarChar(200),note).input('session',dbTypes.Char(10),sessionId).input('user',dbTypes.Char(10),user.id).input('customer',dbTypes.Char(10),customerId)
       .query(`INSERT INTO dbo.LichHen(maLichHen,ngayHen,gioBatDau,gioKetThuc,trangThai,ghiChu,maCT_DonMua,maTK,maKhachHang)
         VALUES(@id,@date,CONVERT(time(0),@start),CONVERT(time(0),@end),@status,@note,@session,@user,@customer)`);
     const appointment={id,date,startTime,endTime:slot.endTime,status:'Chờ xác nhận',note,customerId,sessionId};
@@ -215,8 +215,8 @@ export async function updateAppointment(id,body,user) {
     if(note!=null&&(typeof note!=='string'||note.length>200))throw badRequest('Thông tin lịch hẹn chưa hợp lệ.',[{field:'note',message:'Ghi chú tối đa 200 ký tự'}]);
     const session=await appointmentSession(before.customerId,before.sessionId,transaction);
     const slot=await checkSlot({date,startTime,duration:session.durationMinutes,excludeId:id,transaction});
-    await requestFor(transaction).input('id',sqlTypes.Char(10),id).input('date',sqlTypes.Date,date).input('start',sqlTypes.VarChar(8),`${startTime}:00`)
-      .input('end',sqlTypes.VarChar(8),`${slot.endTime}:00`).input('note',sqlTypes.NVarChar(200),note)
+    await requestFor(transaction).input('id',dbTypes.Char(10),id).input('date',dbTypes.Date,date).input('start',dbTypes.VarChar(8),`${startTime}:00`)
+      .input('end',dbTypes.VarChar(8),`${slot.endTime}:00`).input('note',dbTypes.NVarChar(200),note)
       .query(`UPDATE dbo.LichHen SET ngayHen=@date,gioBatDau=CONVERT(time(0),@start),gioKetThuc=CONVERT(time(0),@end),ghiChu=@note WHERE maLichHen=@id`);
     await cancelReminder(id,transaction);
     const after={...before,date,startTime,endTime:slot.endTime,note};
@@ -235,12 +235,12 @@ export async function cancelAppointment(id,body,user) {
     if(before.status==='Đã hủy')throw err(409,'APPOINTMENT_ALREADY_CANCELLED','Lịch hẹn đã bị hủy.');
     if(before.status==='Hoàn thành')throw err(409,'APPOINTMENT_ALREADY_COMPLETED','Không thể hủy lịch hẹn đã hoàn thành.');
     const old={...before};
-    await requestFor(transaction).input('id',sqlTypes.Char(10),id).query("UPDATE dbo.LichHen SET trangThai=N'Đã hủy' WHERE maLichHen=@id");
-    await requestFor(transaction).input('appointment',sqlTypes.Char(10),id).input('customer',sqlTypes.Char(10),before.customerId)
-      .input('user',sqlTypes.Char(10),user.id).input('reason',sqlTypes.NVarChar(200),reason)
-      .input('snapshot',sqlTypes.NVarChar(sqlTypes.MAX),JSON.stringify(old))
+    await requestFor(transaction).input('id',dbTypes.Char(10),id).query("UPDATE dbo.LichHen SET trangThai=N'Đã hủy' WHERE maLichHen=@id");
+    await requestFor(transaction).input('appointment',dbTypes.Char(10),id).input('customer',dbTypes.Char(10),before.customerId)
+      .input('user',dbTypes.Char(10),user.id).input('reason',dbTypes.NVarChar(200),reason)
+      .input('snapshot',dbTypes.NVarChar(dbTypes.MAX),JSON.stringify(old))
       .query('INSERT INTO dbo.LichSuHuyLich(maLichHen,maKhachHang,maTK,lyDo,duLieuTruoc) VALUES(@appointment,@customer,@user,@reason,@snapshot)');
-    const customer=(await requestFor(transaction).input('id',sqlTypes.Char(10),before.customerId).query('UPDATE dbo.KhachHang SET soLanHuyLich=soLanHuyLich+1 OUTPUT inserted.soLanHuyLich AS count WHERE maKhachHang=@id')).recordset[0];
+    const customer=(await requestFor(transaction).input('id',dbTypes.Char(10),before.customerId).query('UPDATE dbo.KhachHang SET soLanHuyLich=soLanHuyLich+1 WHERE maKhachHang=@id RETURNING soLanHuyLich AS count')).recordset[0];
     await cancelReminder(id,transaction);
     const threshold=Number((await settings(transaction)).BLACKLIST_CANCEL_LIMIT||3);
     const isBlacklisted=Number(customer.count)>=threshold;
@@ -253,7 +253,7 @@ export async function cancelAppointment(id,body,user) {
 
 export async function listCancellations(customerId,query={}) {
   const request=getPool().request();let where='';
-  if(customerId){request.input('customer',sqlTypes.Char(10),customerId);where='WHERE x.maKhachHang=@customer';}
+  if(customerId){request.input('customer',dbTypes.Char(10),customerId);where='WHERE x.maKhachHang=@customer';}
   const result=await request.query(`SELECT x.maHuy AS id,x.maLichHen AS appointmentId,x.maKhachHang AS customerId,k.hoTen AS customerName,
     x.thoiGianHuy AS cancelledAt,x.lyDo AS reason,a.hoTen AS cancelledBy FROM dbo.LichSuHuyLich x JOIN dbo.KhachHang k ON k.maKhachHang=x.maKhachHang
     JOIN dbo.TaiKhoan a ON a.maTK=x.maTK ${where} ORDER BY x.thoiGianHuy DESC`);

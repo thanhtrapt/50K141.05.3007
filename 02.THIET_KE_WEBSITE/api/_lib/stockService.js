@@ -1,4 +1,4 @@
-import { getPool, inTransaction, requestFor, sqlTypes } from './database.js';
+import { getPool, inTransaction, requestFor, dbTypes } from './database.js';
 import { AppError, badRequest, notFound, fieldValidation } from './errors.js';
 import { insertAudit, nextCode, nextLotCode } from './repositories.js';
 import { normalizeVietnamese, nowIso, paginate } from './utils.js';
@@ -11,7 +11,7 @@ const dateText=(value)=>value instanceof Date?new Intl.DateTimeFormat('sv-SE',{t
 const msg=(message,errors=[])=>new AppError(400,'VALIDATION_ERROR',message,errors);
 
 async function systemNumber(key,fallback,transaction) {
-  const r=requestFor(transaction).input('key',sqlTypes.NVarChar(100),key);
+  const r=requestFor(transaction).input('key',dbTypes.NVarChar(100),key);
   const out=await r.query('SELECT giaTri FROM dbo.CauHinhHeThong WHERE maCauHinh=@key');
   return Number(out.recordset[0]?.giaTri ?? fallback);
 }
@@ -23,12 +23,14 @@ async function audit(transaction,user,action,entity,id,before,after) {
 export async function updateStockAlerts(transaction,user,maMyPham,stock) {
   const threshold=await systemNumber('MIN_STOCK_THRESHOLD',10,transaction);
   const state=stock===0?'Hết hàng':stock<=threshold?'Sắp hết hàng':null;
-  const r=requestFor(transaction).input('product',sqlTypes.Char(10),maMyPham);
+  const r=requestFor(transaction).input('product',dbTypes.Char(10),maMyPham);
   if(state) {
-    r.input('status',sqlTypes.NVarChar(50),state);
-    const result=await r.query(`IF EXISTS(SELECT 1 FROM dbo.CanhBao WITH (UPDLOCK,HOLDLOCK) WHERE loaiCanhBao='LOW_STOCK' AND maMyPham=@product AND maLo IS NULL)
-      UPDATE dbo.CanhBao SET trangThai=@status,thoiGianPhatSinh=SYSDATETIME() WHERE loaiCanhBao='LOW_STOCK' AND maMyPham=@product AND maLo IS NULL;
-      ELSE INSERT INTO dbo.CanhBao(loaiCanhBao,maMyPham,maLo,trangThai,thoiGianPhatSinh) VALUES('LOW_STOCK',@product,NULL,@status,SYSDATETIME());`);
+    r.input('status',dbTypes.NVarChar(50),state);
+    await r.query("SELECT pg_advisory_xact_lock(hashtext('LOW_STOCK:' || @product))");
+    const updated=await r.query(`UPDATE dbo.CanhBao SET trangThai=@status,thoiGianPhatSinh=SYSDATETIME()
+      WHERE loaiCanhBao='LOW_STOCK' AND maMyPham=@product AND maLo IS NULL`);
+    if(!updated.rowCount) await r.query(`INSERT INTO dbo.CanhBao(loaiCanhBao,maMyPham,maLo,trangThai,thoiGianPhatSinh)
+      VALUES('LOW_STOCK',@product,NULL,@status,SYSDATETIME())`);
     await audit(transaction,user,'Tự động cập nhật cảnh báo','CanhBao',maMyPham,null,{loaiCanhBao:'LOW_STOCK',trangThai:state});
   } else {
     const result=await r.query(`DELETE FROM dbo.CanhBao WHERE loaiCanhBao='LOW_STOCK' AND maMyPham=@product AND maLo IS NULL`);
@@ -41,12 +43,14 @@ async function updateExpiryAlert(transaction,user,maLo,maMyPham,expiryDate) {
   const expiry=dateText(expiryDate);
   const days=Math.ceil((Date.parse(`${expiry}T00:00:00Z`)-Date.parse(`${vnToday()}T00:00:00Z`))/86400000);
   const state=days<=0?'Hết hạn':days<=threshold?'Sắp hết hạn':null;
-  const r=requestFor(transaction).input('lot',sqlTypes.Char(10),maLo).input('product',sqlTypes.Char(10),maMyPham);
+  const r=requestFor(transaction).input('lot',dbTypes.Char(10),maLo).input('product',dbTypes.Char(10),maMyPham);
   if(state) {
-    r.input('status',sqlTypes.NVarChar(50),state);
-    await r.query(`IF EXISTS(SELECT 1 FROM dbo.CanhBao WITH (UPDLOCK,HOLDLOCK) WHERE loaiCanhBao='EXPIRY' AND maLo=@lot)
-      UPDATE dbo.CanhBao SET trangThai=@status,thoiGianPhatSinh=SYSDATETIME() WHERE loaiCanhBao='EXPIRY' AND maLo=@lot;
-      ELSE INSERT INTO dbo.CanhBao(loaiCanhBao,maMyPham,maLo,trangThai,thoiGianPhatSinh) VALUES('EXPIRY',@product,@lot,@status,SYSDATETIME());`);
+    r.input('status',dbTypes.NVarChar(50),state);
+    await r.query("SELECT pg_advisory_xact_lock(hashtext('EXPIRY:' || @lot))");
+    const updated=await r.query(`UPDATE dbo.CanhBao SET trangThai=@status,thoiGianPhatSinh=SYSDATETIME()
+      WHERE loaiCanhBao='EXPIRY' AND maLo=@lot`);
+    if(!updated.rowCount) await r.query(`INSERT INTO dbo.CanhBao(loaiCanhBao,maMyPham,maLo,trangThai,thoiGianPhatSinh)
+      VALUES('EXPIRY',@product,@lot,@status,SYSDATETIME())`);
     await audit(transaction,user,'Tự động cập nhật cảnh báo','CanhBao',maLo,null,{loaiCanhBao:'EXPIRY',trangThai:state,daysRemaining:days});
   } else {
     const result=await r.query(`DELETE FROM dbo.CanhBao WHERE loaiCanhBao='EXPIRY' AND maLo=@lot`);
@@ -81,7 +85,7 @@ export async function listCosmetics(query) {
 export async function getCosmetic(id) {
   const product=await allProducts().then(rows=>rows.find(row=>row.id===id));
   if(!product) throw notFound('Không tìm thấy mỹ phẩm phù hợp!');
-  const result=await getPool().request().input('id',sqlTypes.Char(10),id).query(`SELECT maLo AS id,ngaySanXuat AS productionDate,hanSuDung AS expiryDate,soLuongTonLo AS stock,ngayNhap AS receivedDate
+  const result=await getPool().request().input('id',dbTypes.Char(10),id).query(`SELECT maLo AS id,ngaySanXuat AS productionDate,hanSuDung AS expiryDate,soLuongTonLo AS stock,ngayNhap AS receivedDate
     FROM dbo.LoHang WHERE maMyPham=@id ORDER BY hanSuDung,ngayNhap`);
   return {...product,batches:result.recordset.map(row=>({...row,id:row.id.trim(),stock:Number(row.stock)}))};
 }
@@ -119,10 +123,10 @@ export async function createCosmetic(body,user) {
   if(await productNameExists(values.tenMyPham)) throw msg('Thông tin chưa hợp lệ, yêu cầu nhập lại',[{field:'name',message:'Tên sản phẩm đã tồn tại'}]);
   return inTransaction(async(transaction)=>{
     const id=await nextCode('MP',transaction); const now=nowIso();
-    const r=requestFor(transaction).input('id',sqlTypes.Char(10),id).input('name',sqlTypes.NVarChar(100),values.tenMyPham)
-      .input('image',sqlTypes.VarChar(255),values.hinhAnh).input('category',sqlTypes.NVarChar(30),values.phanLoai)
-      .input('unit',sqlTypes.NVarChar(20),values.donViTinh).input('price',sqlTypes.Money,values.giaBan)
-      .input('description',sqlTypes.NVarChar(200),values.moTa);
+    const r=requestFor(transaction).input('id',dbTypes.Char(10),id).input('name',dbTypes.NVarChar(100),values.tenMyPham)
+      .input('image',dbTypes.VarChar(255),values.hinhAnh).input('category',dbTypes.NVarChar(30),values.phanLoai)
+      .input('unit',dbTypes.NVarChar(20),values.donViTinh).input('price',dbTypes.Money,values.giaBan)
+      .input('description',dbTypes.NVarChar(200),values.moTa);
     await r.query(`INSERT INTO dbo.MyPham(maMyPham,tenMyPham,hinhAnh,phanLoai,soLuongTonKho,donViTinh,giaBan,moTa,trangThai)
       VALUES(@id,@name,@image,@category,0,@unit,@price,@description,1)`);
     const after={maMyPham:id,...values,soLuongTonKho:0,trangThai:true,ngayTao:now};
@@ -137,8 +141,8 @@ export async function updateCosmetic(id,body,user) {
   const values=validateProduct(body,{partial:true});
   if(values.tenMyPham&&await productNameExists(values.tenMyPham,id)) throw msg('Thông tin chưa hợp lệ, yêu cầu nhập lại',[{field:'name',message:'Tên sản phẩm đã tồn tại'}]);
   return inTransaction(async(transaction)=>{
-    const assignments=[]; const r=requestFor(transaction).input('id',sqlTypes.Char(10),id);
-    const bind={tenMyPham:['name',sqlTypes.NVarChar(100)],phanLoai:['category',sqlTypes.NVarChar(30)],donViTinh:['unit',sqlTypes.NVarChar(20)],giaBan:['price',sqlTypes.Money],moTa:['description',sqlTypes.NVarChar(200)],hinhAnh:['image',sqlTypes.VarChar(255)]};
+    const assignments=[]; const r=requestFor(transaction).input('id',dbTypes.Char(10),id);
+    const bind={tenMyPham:['name',dbTypes.NVarChar(100)],phanLoai:['category',dbTypes.NVarChar(30)],donViTinh:['unit',dbTypes.NVarChar(20)],giaBan:['price',dbTypes.Money],moTa:['description',dbTypes.NVarChar(200)],hinhAnh:['image',dbTypes.VarChar(255)]};
     for(const [column,[param,type]] of Object.entries(bind)) if(values[column]!==undefined){assignments.push(`${column}=@${param}`);r.input(param,type,values[column]);}
     if(assignments.length) await r.query(`UPDATE dbo.MyPham SET ${assignments.join(',')} WHERE maMyPham=@id`);
     const after={...before,
@@ -158,13 +162,13 @@ export async function deleteCosmetic(id,user) {
   const before=await getCosmetic(id);
   if(before.stock!==0||before.batches.some(b=>b.stock!==0)) throw new AppError(409,'COSMETIC_HAS_STOCK','Không thể xóa mỹ phẩm còn tồn kho.');
   return inTransaction(async(transaction)=>{
-    const usage=await requestFor(transaction).input('id',sqlTypes.Char(10),id).query(`SELECT
+    const usage=await requestFor(transaction).input('id',dbTypes.Char(10),id).query(`SELECT
       (SELECT COUNT(*) FROM dbo.CT_PhieuNhapKho l JOIN dbo.LoHang b ON b.maLo=l.maLo WHERE b.maMyPham=@id) AS receiptCount,
       (SELECT COUNT(*) FROM dbo.CT_PhieuXuatKho l JOIN dbo.LoHang b ON b.maLo=l.maLo WHERE b.maMyPham=@id) AS issueCount,
       (SELECT COUNT(*) FROM dbo.CT_DonGhiNhanBan l JOIN dbo.LoHang b ON b.maLo=l.maLo WHERE b.maMyPham=@id) AS saleCount`);
     const row=usage.recordset[0];
     if(row.receiptCount||row.issueCount||row.saleCount) throw new AppError(409,'COSMETIC_HAS_HISTORY','Không thể xóa mỹ phẩm đã phát sinh giao dịch kho.');
-    await requestFor(transaction).input('id',sqlTypes.Char(10),id).query('UPDATE dbo.MyPham SET trangThai=0 WHERE maMyPham=@id');
+    await requestFor(transaction).input('id',dbTypes.Char(10),id).query('UPDATE dbo.MyPham SET trangThai=0 WHERE maMyPham=@id');
     await audit(transaction,user,'Ngừng sử dụng mỹ phẩm','MyPham',id,before,{...before,isActive:false});
     return {id:id.trim(),message:'Xóa thông tin mỹ phẩm thành công'};
   });
@@ -173,7 +177,7 @@ export async function deleteCosmetic(id,user) {
 export async function listLots(query) {
   const productId=query.maMyPham || query.cosmeticId;
   const r=getPool().request();
-  if(productId) r.input('product',sqlTypes.Char(10),productId);
+  if(productId) r.input('product',dbTypes.Char(10),productId);
   const result=await r.query(`SELECT l.maLo AS id,l.maMyPham AS cosmeticId,p.tenMyPham AS cosmeticName,l.ngaySanXuat AS productionDate,
     l.hanSuDung AS expiryDate,l.ngayNhap AS receivedDate,l.soLuongTonLo AS stock
     FROM dbo.LoHang l JOIN dbo.MyPham p ON p.maMyPham=l.maMyPham
@@ -203,9 +207,9 @@ export async function createReceipt(body,user) {
   const total=prepared.reduce((sum,line)=>sum+line.price*line.quantity,0);
   return inTransaction(async(transaction)=>{
     const receiptId=await nextCode('PN',transaction);
-    const r=requestFor(transaction).input('id',sqlTypes.Char(10),receiptId).input('creatorId',sqlTypes.Char(10),user.id)
-      .input('creator',sqlTypes.NVarChar(50),user.full_name).input('date',sqlTypes.Date,date)
-      .input('payment',sqlTypes.NVarChar(20),paymentStatus).input('total',sqlTypes.Money,total);
+    const r=requestFor(transaction).input('id',dbTypes.Char(10),receiptId).input('creatorId',dbTypes.Char(10),user.id)
+      .input('creator',dbTypes.NVarChar(50),user.full_name).input('date',dbTypes.Date,date)
+      .input('payment',dbTypes.NVarChar(20),paymentStatus).input('total',dbTypes.Money,total);
     await r.query('INSERT INTO dbo.PhieuNhapKho(maPhieuNhap,ngayNhap,nguoiTao,trangThaiThanhToan,tongTien,maTK) VALUES(@id,@date,@creator,@payment,@total,@creatorId)');
     const affected=[];
     for(const {item,price,quantity,lot} of prepared) {
@@ -215,37 +219,37 @@ export async function createReceipt(body,user) {
         if(!newItem.name||!newItem.unit||!productTypeMap[type]) throw msg('Chưa hoàn tất thông tin, yêu cầu nhập lại',[{field:'newProduct',message:'Tên, đơn vị tính và phân loại sản phẩm là bắt buộc'}]);
         const salePrice=asMoney(newItem.salePrice);
         if(salePrice===null) throw msg('Chưa hoàn tất thông tin, yêu cầu nhập lại',[{field:'newProduct.salePrice',message:'Giá bán không được là số âm'}]);
-        const dup=await requestFor(transaction).input('name',sqlTypes.NVarChar(100),newItem.name.trim()).query('SELECT maMyPham FROM dbo.MyPham WITH (UPDLOCK,HOLDLOCK) WHERE tenMyPham=@name');
+        const dup=await requestFor(transaction).input('name',dbTypes.NVarChar(100),newItem.name.trim()).query('SELECT maMyPham FROM dbo.MyPham WITH (UPDLOCK,HOLDLOCK) WHERE tenMyPham=@name');
         if(dup.recordset.length) throw msg('Thông tin chưa hợp lệ, yêu cầu nhập lại',[{field:'newProduct.name',message:'Tên sản phẩm đã tồn tại'}]);
         productId=await nextCode('MP',transaction);
-        await requestFor(transaction).input('id',sqlTypes.Char(10),productId).input('name',sqlTypes.NVarChar(100),newItem.name.trim())
-          .input('type',sqlTypes.NVarChar(30),type).input('unit',sqlTypes.NVarChar(20),newItem.unit.trim())
-          .input('price',sqlTypes.Money,salePrice).input('description',sqlTypes.NVarChar(200),newItem.description||'')
+        await requestFor(transaction).input('id',dbTypes.Char(10),productId).input('name',dbTypes.NVarChar(100),newItem.name.trim())
+          .input('type',dbTypes.NVarChar(30),type).input('unit',dbTypes.NVarChar(20),newItem.unit.trim())
+          .input('price',dbTypes.Money,salePrice).input('description',dbTypes.NVarChar(200),newItem.description||'')
           .query('INSERT INTO dbo.MyPham(maMyPham,tenMyPham,phanLoai,soLuongTonKho,donViTinh,giaBan,moTa,trangThai) VALUES(@id,@name,@type,0,@unit,@price,@description,1)');
         await audit(transaction,user,'Tạo nhanh mỹ phẩm','MyPham',productId,null,{...newItem,maMyPham:productId,soLuongTonKho:0});
       }
-      const product=(await requestFor(transaction).input('id',sqlTypes.Char(10),productId).query('SELECT TOP(1) * FROM dbo.MyPham WITH (UPDLOCK,HOLDLOCK) WHERE maMyPham=@id AND trangThai=1')).recordset[0];
+      const product=(await requestFor(transaction).input('id',dbTypes.Char(10),productId).query('SELECT TOP(1) * FROM dbo.MyPham WITH (UPDLOCK,HOLDLOCK) WHERE maMyPham=@id AND trangThai=1')).recordset[0];
       if(!product) throw notFound('Không tìm thấy mỹ phẩm phù hợp!');
       let lotId=item.batchId||item.maLo;
       let expiryForAlert=lot.expiryDate||lot.hanSuDung||null;
       if(lotId) {
-        const lotRow=(await requestFor(transaction).input('lot',sqlTypes.Char(10),lotId).input('product',sqlTypes.Char(10),productId)
+        const lotRow=(await requestFor(transaction).input('lot',dbTypes.Char(10),lotId).input('product',dbTypes.Char(10),productId)
           .query('SELECT TOP(1) * FROM dbo.LoHang WITH (UPDLOCK,HOLDLOCK) WHERE maLo=@lot AND maMyPham=@product')).recordset[0];
         if(!lotRow) throw notFound('Không tìm thấy lô hàng phù hợp.');
         expiryForAlert=lotRow.hanSuDung;
       } else {
         const code=await nextLotCode(date,transaction);lotId=code;
-        await requestFor(transaction).input('lot',sqlTypes.Char(10),lotId).input('product',sqlTypes.Char(10),productId)
-          .input('production',sqlTypes.Date,lot.productionDate||lot.ngaySanXuat).input('expiry',sqlTypes.Date,lot.expiryDate||lot.hanSuDung).input('date',sqlTypes.Date,date)
+        await requestFor(transaction).input('lot',dbTypes.Char(10),lotId).input('product',dbTypes.Char(10),productId)
+          .input('production',dbTypes.Date,lot.productionDate||lot.ngaySanXuat).input('expiry',dbTypes.Date,lot.expiryDate||lot.hanSuDung).input('date',dbTypes.Date,date)
           .query('INSERT INTO dbo.LoHang(maLo,soLuongTonLo,ngaySanXuat,hanSuDung,maMyPham,ngayNhap) VALUES(@lot,0,@production,@expiry,@product,@date)');
       }
       const amount=price*quantity;
-      await requestFor(transaction).input('line',sqlTypes.Char(10),await nextCode('CI',transaction)).input('receipt',sqlTypes.Char(10),receiptId)
-        .input('lot',sqlTypes.Char(10),lotId).input('quantity',sqlTypes.Int,quantity).input('price',sqlTypes.Money,price).input('amount',sqlTypes.Money,amount)
+      await requestFor(transaction).input('line',dbTypes.Char(10),await nextCode('CI',transaction)).input('receipt',dbTypes.Char(10),receiptId)
+        .input('lot',dbTypes.Char(10),lotId).input('quantity',dbTypes.Int,quantity).input('price',dbTypes.Money,price).input('amount',dbTypes.Money,amount)
         .query('INSERT INTO dbo.CT_PhieuNhapKho(maCT_PhieuNhap,soLuong,giaNhap,thanhTien,maPhieuNhap,maLo) VALUES(@line,@quantity,@price,@amount,@receipt,@lot)');
-      await requestFor(transaction).input('lot',sqlTypes.Char(10),lotId).input('quantity',sqlTypes.Int,quantity).query('UPDATE dbo.LoHang SET soLuongTonLo=soLuongTonLo+@quantity WHERE maLo=@lot');
-      await requestFor(transaction).input('product',sqlTypes.Char(10),productId).input('quantity',sqlTypes.Int,quantity).query('UPDATE dbo.MyPham SET soLuongTonKho=soLuongTonKho+@quantity WHERE maMyPham=@product');
-      const updated=(await requestFor(transaction).input('product',sqlTypes.Char(10),productId).query('SELECT soLuongTonKho FROM dbo.MyPham WHERE maMyPham=@product')).recordset[0];
+      await requestFor(transaction).input('lot',dbTypes.Char(10),lotId).input('quantity',dbTypes.Int,quantity).query('UPDATE dbo.LoHang SET soLuongTonLo=soLuongTonLo+@quantity WHERE maLo=@lot');
+      await requestFor(transaction).input('product',dbTypes.Char(10),productId).input('quantity',dbTypes.Int,quantity).query('UPDATE dbo.MyPham SET soLuongTonKho=soLuongTonKho+@quantity WHERE maMyPham=@product');
+      const updated=(await requestFor(transaction).input('product',dbTypes.Char(10),productId).query('SELECT soLuongTonKho FROM dbo.MyPham WHERE maMyPham=@product')).recordset[0];
       await updateStockAlerts(transaction,user,productId,Number(updated.soLuongTonKho));
       await updateExpiryAlert(transaction,user,lotId,productId,expiryForAlert||date);
       affected.push(productId);
@@ -265,10 +269,10 @@ export async function listReceipts(query) {
 }
 
 export async function getReceipt(id) {
-  const head=(await getPool().request().input('id',sqlTypes.Char(10),id).query(`SELECT maPhieuNhap AS id,ngayNhap AS receiptDate,nguoiTao AS creator,
+  const head=(await getPool().request().input('id',dbTypes.Char(10),id).query(`SELECT maPhieuNhap AS id,ngayNhap AS receiptDate,nguoiTao AS creator,
     trangThaiThanhToan AS paymentStatus,tongTien AS total FROM dbo.PhieuNhapKho WHERE maPhieuNhap=@id`)).recordset[0];
   if(!head) throw notFound('Không tồn tại phiếu nhập kho!');
-  const lines=(await getPool().request().input('id',sqlTypes.Char(10),id).query(`SELECT c.maMyPham AS cosmeticId,c.tenMyPham AS cosmeticName,c.donViTinh AS unit,
+  const lines=(await getPool().request().input('id',dbTypes.Char(10),id).query(`SELECT c.maMyPham AS cosmeticId,c.tenMyPham AS cosmeticName,c.donViTinh AS unit,
     l.giaNhap AS purchasePrice,l.soLuong AS quantity,b.maLo AS lotCode,b.ngaySanXuat AS productionDate,b.hanSuDung AS expiryDate,l.thanhTien AS lineTotal
     FROM dbo.CT_PhieuNhapKho l JOIN dbo.LoHang b ON b.maLo=l.maLo JOIN dbo.MyPham c ON c.maMyPham=b.maMyPham WHERE l.maPhieuNhap=@id ORDER BY l.maCT_PhieuNhap`)).recordset;
   return {...head,id:head.id.trim(),total:Number(head.total),items:lines.map(row=>({...row,cosmeticId:row.cosmeticId.trim(),lotCode:row.lotCode.trim(),purchasePrice:Number(row.purchasePrice),lineTotal:Number(row.lineTotal)}))};
@@ -293,12 +297,12 @@ export async function createIssue(body,user) {
   fieldValidation(errors,'Chưa hoàn tất thông tin, yêu cầu nhập lại');
   return inTransaction(async(transaction)=>{
     const issueId=await nextCode('PX',transaction);
-    await requestFor(transaction).input('id',sqlTypes.Char(10),issueId).input('creatorId',sqlTypes.Char(10),user.id)
-      .input('creator',sqlTypes.NVarChar(50),user.full_name).input('date',sqlTypes.Date,date).input('note',sqlTypes.NVarChar(200),body.reason||body.ghiChu||'')
+    await requestFor(transaction).input('id',dbTypes.Char(10),issueId).input('creatorId',dbTypes.Char(10),user.id)
+      .input('creator',dbTypes.NVarChar(50),user.full_name).input('date',dbTypes.Date,date).input('note',dbTypes.NVarChar(200),body.reason||body.ghiChu||'')
       .query('INSERT INTO dbo.PhieuXuatKho(maPhieuXuat,ngayXuat,nguoiTao,ghiChu,maTK) VALUES(@id,@date,@creator,@note,@creatorId)');
     for(const [i,line] of items.entries()) {
       const productId=line.cosmeticId||line.maMyPham; const batchId=line.batchId||line.maLo; const quantity=Number(line.quantity??line.soLuong);
-      const row=(await requestFor(transaction).input('lot',sqlTypes.Char(10),batchId).input('product',sqlTypes.Char(10),productId)
+      const row=(await requestFor(transaction).input('lot',dbTypes.Char(10),batchId).input('product',dbTypes.Char(10),productId)
         .query(`SELECT b.maLo,b.maMyPham,b.hanSuDung,b.soLuongTonLo,p.phanLoai,p.soLuongTonKho,p.tenMyPham
           FROM dbo.LoHang b WITH (UPDLOCK,HOLDLOCK) JOIN dbo.MyPham p WITH (UPDLOCK,HOLDLOCK) ON p.maMyPham=b.maMyPham
           WHERE b.maLo=@lot AND b.maMyPham=@product AND p.trangThai=1`)).recordset[0];
@@ -307,14 +311,14 @@ export async function createIssue(body,user) {
       if(dateText(row.hanSuDung)<=vnToday()) throw msg('Lô đã hết hạn sử dụng, không thể xuất dùng!',[{field:`items.${i}.batchId`,message:'Lô đã hết hạn sử dụng, không thể xuất dùng!'}]);
       if(Number(row.soLuongTonLo)===0) throw msg('Sản phẩm đã hết hàng!',[{field:`items.${i}.batchId`,message:'Sản phẩm đã hết hàng!'}]);
       if(quantity>Number(row.soLuongTonLo)) throw msg('Số lượng xuất vượt quá số lượng tồn của lô!',[{field:`items.${i}.quantity`,message:'Số lượng xuất vượt quá số lượng tồn của lô!'}]);
-      await requestFor(transaction).input('line',sqlTypes.Char(10),await nextCode('CX',transaction)).input('issue',sqlTypes.Char(10),issueId)
-        .input('lot',sqlTypes.Char(10),batchId).input('quantity',sqlTypes.Int,quantity)
+      await requestFor(transaction).input('line',dbTypes.Char(10),await nextCode('CX',transaction)).input('issue',dbTypes.Char(10),issueId)
+        .input('lot',dbTypes.Char(10),batchId).input('quantity',dbTypes.Int,quantity)
         .query('INSERT INTO dbo.CT_PhieuXuatKho(maCT_PhieuXuat,soLuong,maPhieuXuat,maLo) VALUES(@line,@quantity,@issue,@lot)');
-      await requestFor(transaction).input('lot',sqlTypes.Char(10),batchId).input('quantity',sqlTypes.Int,quantity)
+      await requestFor(transaction).input('lot',dbTypes.Char(10),batchId).input('quantity',dbTypes.Int,quantity)
         .query('UPDATE dbo.LoHang SET soLuongTonLo=soLuongTonLo-@quantity WHERE maLo=@lot');
-      await requestFor(transaction).input('product',sqlTypes.Char(10),productId).input('quantity',sqlTypes.Int,quantity)
+      await requestFor(transaction).input('product',dbTypes.Char(10),productId).input('quantity',dbTypes.Int,quantity)
         .query('UPDATE dbo.MyPham SET soLuongTonKho=soLuongTonKho-@quantity WHERE maMyPham=@product');
-      const stock=(await requestFor(transaction).input('product',sqlTypes.Char(10),productId).query('SELECT soLuongTonKho FROM dbo.MyPham WHERE maMyPham=@product')).recordset[0].soLuongTonKho;
+      const stock=(await requestFor(transaction).input('product',dbTypes.Char(10),productId).query('SELECT soLuongTonKho FROM dbo.MyPham WHERE maMyPham=@product')).recordset[0].soLuongTonKho;
       await updateStockAlerts(transaction,user,productId,Number(stock));
     }
     await audit(transaction,user,'Tạo phiếu xuất kho','PhieuXuatKho',issueId,null,{maPhieuXuat:issueId,ngayXuat:date,ghiChu:body.reason||body.ghiChu||'',items});
@@ -332,9 +336,9 @@ export async function listIssues(query) {
 }
 
 export async function getIssue(id) {
-  const head=(await getPool().request().input('id',sqlTypes.Char(10),id).query('SELECT maPhieuXuat AS id,ngayXuat AS issueDate,nguoiTao AS creator,ghiChu AS reason FROM dbo.PhieuXuatKho WHERE maPhieuXuat=@id')).recordset[0];
+  const head=(await getPool().request().input('id',dbTypes.Char(10),id).query('SELECT maPhieuXuat AS id,ngayXuat AS issueDate,nguoiTao AS creator,ghiChu AS reason FROM dbo.PhieuXuatKho WHERE maPhieuXuat=@id')).recordset[0];
   if(!head) throw notFound('Không tồn tại phiếu xuất kho!');
-  const lines=(await getPool().request().input('id',sqlTypes.Char(10),id).query(`SELECT c.maMyPham AS cosmeticId,c.tenMyPham AS cosmeticName,c.donViTinh AS unit,
+  const lines=(await getPool().request().input('id',dbTypes.Char(10),id).query(`SELECT c.maMyPham AS cosmeticId,c.tenMyPham AS cosmeticName,c.donViTinh AS unit,
     b.maLo AS lotCode,b.hanSuDung AS expiryDate,l.soLuong AS quantity FROM dbo.CT_PhieuXuatKho l
     JOIN dbo.LoHang b ON b.maLo=l.maLo JOIN dbo.MyPham c ON c.maMyPham=b.maMyPham WHERE l.maPhieuXuat=@id ORDER BY l.maCT_PhieuXuat`)).recordset;
   return {...head,id:head.id.trim(),items:lines.map(row=>({...row,cosmeticId:row.cosmeticId.trim(),lotCode:row.lotCode.trim(),quantity:Number(row.quantity)}))};
@@ -360,9 +364,9 @@ export async function updateConfiguration(key,value,user) {
   if(['MIN_STOCK_THRESHOLD','EXPIRY_WARNING_DAYS','REMINDER_BEFORE_MINUTES','BLACKLIST_CANCEL_LIMIT','APPOINTMENT_SLOT_MINUTES','SERVICE_BED_COUNT','SERVICE_PROVIDER_COUNT'].includes(key)&&(!Number.isInteger(Number(value))||Number(value)<1)) throw badRequest('Giá trị cấu hình không hợp lệ.',[{field:'value',message:'Giá trị phải là số nguyên dương'}]);
   if((key==='SPA_OPEN_TIME'||key==='SPA_CLOSE_TIME')&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(value))) throw badRequest('Giá trị cấu hình không hợp lệ.',[{field:'value',message:'Giờ phải có định dạng HH:mm'}]);
   return inTransaction(async(transaction)=>{
-    const previous=(await requestFor(transaction).input('key',sqlTypes.NVarChar(100),key).query('SELECT maCauHinh,giaTri,kieuGiaTri,moTa FROM dbo.CauHinhHeThong WITH (UPDLOCK,HOLDLOCK) WHERE maCauHinh=@key')).recordset[0];
+    const previous=(await requestFor(transaction).input('key',dbTypes.NVarChar(100),key).query('SELECT maCauHinh,giaTri,kieuGiaTri,moTa FROM dbo.CauHinhHeThong WITH (UPDLOCK,HOLDLOCK) WHERE maCauHinh=@key')).recordset[0];
     if(!previous) throw notFound('Không tìm thấy cấu hình hệ thống phù hợp.');
-    await requestFor(transaction).input('key',sqlTypes.NVarChar(100),key).input('value',sqlTypes.NVarChar(4000),String(value)).input('user',sqlTypes.Char(10),user.id)
+    await requestFor(transaction).input('key',dbTypes.NVarChar(100),key).input('value',dbTypes.NVarChar(4000),String(value)).input('user',dbTypes.Char(10),user.id)
       .query('UPDATE dbo.CauHinhHeThong SET giaTri=@value,capNhatLuc=SYSDATETIME(),capNhatBoi=@user WHERE maCauHinh=@key');
     await audit(transaction,user,'Cập nhật cấu hình','CauHinhHeThong',key,previous,{...previous,giaTri:String(value)});
     return {key,value:String(value),message:'Cập nhật cấu hình thành công'};

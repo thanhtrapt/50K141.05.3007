@@ -1,4 +1,4 @@
-# ERD dạng văn bản — schema SQL Server Hương Spa
+# ERD dạng văn bản — schema Supabase PostgreSQL Hương Spa
 
 ## Tài khoản và kiểm soát
 
@@ -26,4 +26,4 @@
 - `DonGhiNhanBan (maDon)` 1–n `CT_DonGhiNhanBan`; dòng bán tham chiếu lô hàng.
 - `CanhBao (maCanhBao)` tham chiếu mỹ phẩm và/hoặc lô cho cảnh báo tồn thấp/hạn sử dụng.
 
-Migration: `migrations/001_initial.sql`, `migrations/002_schema_alignment.sql`.
+Schema hiện hữu trên Supabase được dùng trực tiếp; ứng dụng không tạo hay sửa schema khi chạy.

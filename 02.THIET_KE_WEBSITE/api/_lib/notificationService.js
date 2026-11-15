@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import { getPool,inTransaction,requestFor,sqlTypes } from './database.js';
+import { getPool,inTransaction,requestFor,dbTypes } from './database.js';
 import { insertAudit } from './repositories.js';
 import { signActionToken } from './security.js';
 import { generateSummaryPdf } from './pdfSummaryService.js';
@@ -20,46 +20,48 @@ export function createReviewUrl(packageId,customerId) {
 }
 
 export async function enqueueNotification(transaction,{event,recipient,payload,appointmentId=null,sessionId=null,dueAt=new Date()}) {
-  const existing=(await requestFor(transaction).input('session',sqlTypes.Char(10),sessionId).input('event',sqlTypes.NVarChar(100),event)
+  const existing=(await requestFor(transaction).input('session',dbTypes.Char(10),sessionId).input('event',dbTypes.NVarChar(100),event)
     .query(`SELECT TOP(1) maThongBao FROM dbo.NhatKyThongBao WITH (UPDLOCK,HOLDLOCK)
       WHERE maCT_DonMua=@session AND suKien=@event`)).recordset[0];
   if(existing)return {id:existing.maThongBao,alreadyQueued:true};
-  const result=await requestFor(transaction).input('channel',sqlTypes.NVarChar(30),'ZALO').input('event',sqlTypes.NVarChar(100),event)
-    .input('recipient',sqlTypes.NVarChar(100),recipient).input('request',sqlTypes.NVarChar(sqlTypes.MAX),JSON.stringify(payload))
-    .input('appointment',sqlTypes.Char(10),appointmentId).input('session',sqlTypes.Char(10),sessionId).input('due',sqlTypes.DateTime2,dueAt)
+  const result=await requestFor(transaction).input('channel',dbTypes.NVarChar(30),'ZALO').input('event',dbTypes.NVarChar(100),event)
+    .input('recipient',dbTypes.NVarChar(100),recipient).input('request',dbTypes.NVarChar(dbTypes.MAX),JSON.stringify(payload))
+    .input('appointment',dbTypes.Char(10),appointmentId).input('session',dbTypes.Char(10),sessionId).input('due',dbTypes.DateTime2,dueAt)
     .query(`INSERT INTO dbo.NhatKyThongBao(kenh,suKien,nguoiNhan,yeuCau,phanHoi,trangThai,soLanThu,maLichHen,maCT_DonMua,thoiGianGuiDuKien)
-      OUTPUT inserted.maThongBao VALUES(@channel,@event,@recipient,@request,NULL,N'Chờ gửi',0,@appointment,@session,@due)`);
+      VALUES(@channel,@event,@recipient,@request,NULL,'Chờ gửi',0,@appointment,@session,@due) RETURNING maThongBao`);
   return {id:result.recordset[0].maThongBao,alreadyQueued:false};
 }
 
 export async function logInboundEvent({event,recipient=null,payload,response}) {
   return inTransaction(async transaction=>{
-    const result=await requestFor(transaction).input('channel',sqlTypes.NVarChar(30),'ZALO').input('event',sqlTypes.NVarChar(100),event)
-      .input('recipient',sqlTypes.NVarChar(100),recipient).input('request',sqlTypes.NVarChar(sqlTypes.MAX),JSON.stringify(payload))
-      .input('response',sqlTypes.NVarChar(sqlTypes.MAX),JSON.stringify(response))
+    const result=await requestFor(transaction).input('channel',dbTypes.NVarChar(30),'ZALO').input('event',dbTypes.NVarChar(100),event)
+      .input('recipient',dbTypes.NVarChar(100),recipient).input('request',dbTypes.NVarChar(dbTypes.MAX),JSON.stringify(payload))
+      .input('response',dbTypes.NVarChar(dbTypes.MAX),JSON.stringify(response))
       .query(`INSERT INTO dbo.NhatKyThongBao(kenh,suKien,nguoiNhan,yeuCau,phanHoi,trangThai,soLanThu)
-        OUTPUT inserted.maThongBao VALUES(@channel,@event,@recipient,@request,@response,N'Đã nhận',1)`);
+        VALUES(@channel,@event,@recipient,@request,@response,'Đã nhận',1) RETURNING maThongBao`);
     return result.recordset[0].maThongBao;
   });
 }
 
 async function claimNotification() {
-  const result=await getPool().request().query(`;WITH nextNotification AS(
-      SELECT TOP(1) * FROM dbo.NhatKyThongBao WITH (UPDLOCK,READPAST,ROWLOCK)
-      WHERE trangThai IN(N'Chờ gửi',N'Đến hạn') AND (thoiGianGuiDuKien IS NULL OR thoiGianGuiDuKien<=SYSDATETIME())
-        AND suKien IN(N'APPOINTMENT_REMINDER',N'SESSION_CONFIRM_REQUEST',N'SUMMARY_AND_REVIEW')
-      ORDER BY COALESCE(thoiGianGuiDuKien,taoLuc),maThongBao
+  const result=await getPool().request().query(`WITH candidate AS (
+      SELECT "maThongBao" FROM public."NhatKyThongBao"
+      WHERE "trangThai" IN('Chờ gửi','Đến hạn') AND ("thoiGianGuiDuKien" IS NULL OR "thoiGianGuiDuKien"<=CURRENT_TIMESTAMP)
+        AND "suKien" IN('APPOINTMENT_REMINDER','SESSION_CONFIRM_REQUEST','SUMMARY_AND_REVIEW')
+      ORDER BY COALESCE("thoiGianGuiDuKien","taoLuc"),"maThongBao"
+      FOR UPDATE SKIP LOCKED LIMIT 1
     )
-    UPDATE nextNotification SET trangThai=N'Đang gửi',soLanThu=soLanThu+1,capNhatLuc=SYSDATETIME()
-    OUTPUT inserted.maThongBao,inserted.suKien,inserted.nguoiNhan,inserted.yeuCau,inserted.phanHoi,inserted.soLanThu,inserted.maLichHen,inserted.maCT_DonMua`);
+    UPDATE public."NhatKyThongBao" AS n SET "trangThai"='Đang gửi',"soLanThu"=n."soLanThu"+1,"capNhatLuc"=CURRENT_TIMESTAMP
+    FROM candidate WHERE n."maThongBao"=candidate."maThongBao"
+    RETURNING n."maThongBao",n."suKien",n."nguoiNhan",n."yeuCau",n."phanHoi",n."soLanThu",n."maLichHen",n."maCT_DonMua"`);
   return result.recordset[0]||null;
 }
 
 async function skipCancelledAppointment(row) {
   if(!row.maLichHen)return false;
-  const found=(await getPool().request().input('id',sqlTypes.Char(10),row.maLichHen).query('SELECT trangThai FROM dbo.LichHen WHERE maLichHen=@id')).recordset[0];
+  const found=(await getPool().request().input('id',dbTypes.Char(10),row.maLichHen).query('SELECT trangThai FROM dbo.LichHen WHERE maLichHen=@id')).recordset[0];
   if(found&&found.trangThai!=='Đã hủy')return false;
-  await getPool().request().input('id',sqlTypes.BigInt,row.maThongBao).query("UPDATE dbo.NhatKyThongBao SET trangThai=N'Đã hủy',capNhatLuc=SYSDATETIME() WHERE maThongBao=@id");
+  await getPool().request().input('id',dbTypes.BigInt,row.maThongBao).query("UPDATE dbo.NhatKyThongBao SET trangThai=N'Đã hủy',capNhatLuc=SYSDATETIME() WHERE maThongBao=@id");
   return true;
 }
 
@@ -70,13 +72,15 @@ async function preparePayload(row) {
     const summaryUrl=`${config.publicBaseUrl}${document.path}`;
     const reviewUrl=createReviewUrl(payload.packageId,payload.customerId);
     await inTransaction(async transaction=>{
-      await requestFor(transaction).input('package',sqlTypes.Char(10),payload.packageId).input('path',sqlTypes.NVarChar(255),document.path)
+      await requestFor(transaction).input('package',dbTypes.Char(10),payload.packageId).input('path',dbTypes.NVarChar(255),document.path)
         .query('UPDATE dbo.DonMuaDV SET fileTongHop=@path WHERE maDonMua=@package');
-      await requestFor(transaction).input('package',sqlTypes.Char(10),payload.packageId).input('session',sqlTypes.Char(10),payload.sessionId)
-        .input('type',sqlTypes.NVarChar(20),document.milestone).input('name',sqlTypes.NVarChar(255),document.fileName).input('path',sqlTypes.NVarChar(500),document.path)
-        .query(`IF EXISTS(SELECT 1 FROM dbo.TaiLieuTongHop WITH (UPDLOCK,HOLDLOCK) WHERE maCT_DonMua=@session AND loaiTaiLieu=@type)
-          UPDATE dbo.TaiLieuTongHop SET tenTep=@name,duongDan=@path,thoiGianTao=SYSDATETIME() WHERE maCT_DonMua=@session AND loaiTaiLieu=@type;
-          ELSE INSERT dbo.TaiLieuTongHop(maDonMua,maCT_DonMua,loaiTaiLieu,tenTep,duongDan) VALUES(@package,@session,@type,@name,@path)`);
+      const documentRequest=requestFor(transaction).input('package',dbTypes.Char(10),payload.packageId).input('session',dbTypes.Char(10),payload.sessionId)
+        .input('type',dbTypes.NVarChar(20),document.milestone).input('name',dbTypes.NVarChar(255),document.fileName).input('path',dbTypes.NVarChar(500),document.path)
+      await documentRequest.query("SELECT pg_advisory_xact_lock(hashtext(@session || ':' || @type))");
+      const existing=await documentRequest.query(`UPDATE dbo.TaiLieuTongHop SET tenTep=@name,duongDan=@path,thoiGianTao=SYSDATETIME()
+        WHERE maCT_DonMua=@session AND loaiTaiLieu=@type`);
+      if(!existing.rowCount) await documentRequest.query(`INSERT INTO dbo.TaiLieuTongHop(maDonMua,maCT_DonMua,loaiTaiLieu,tenTep,duongDan)
+        VALUES(@package,@session,@type,@name,@path)`);
       await insertAudit({transaction,user:null,action:'Tạo PDF tổng hợp liệu trình',entity:'TaiLieuTongHop',entityId:document.fileName,before:null,
         after:{maDonMua:payload.packageId,maCT_DonMua:payload.sessionId,duongDan:document.path,loaiTaiLieu:document.milestone}});
     });
@@ -105,8 +109,8 @@ async function updateAfterSend(row,{response,error}) {
   const nextStatus=error?(attempts>=max?'Thất bại':'Chờ gửi'):'Đã gửi';
   const delay=Math.min(3600,30*(2**Math.max(0,attempts-1)));
   const payload=error?{error:String(error.message||error),attempt:attempts,nextRetrySeconds:attempts>=max?null:delay}:{httpStatus:response.status,body:response.body};
-  await getPool().request().input('id',sqlTypes.BigInt,row.maThongBao).input('status',sqlTypes.NVarChar(30),nextStatus)
-    .input('response',sqlTypes.NVarChar(sqlTypes.MAX),JSON.stringify(payload)).input('delay',sqlTypes.Int,delay)
+  await getPool().request().input('id',dbTypes.BigInt,row.maThongBao).input('status',dbTypes.NVarChar(30),nextStatus)
+    .input('response',dbTypes.NVarChar(dbTypes.MAX),JSON.stringify(payload)).input('delay',dbTypes.Int,delay)
     .query(`UPDATE dbo.NhatKyThongBao SET trangThai=@status,phanHoi=@response,
       thoiGianGuiDuKien=CASE WHEN @status=N'Chờ gửi' THEN DATEADD(SECOND,@delay,SYSDATETIME()) ELSE thoiGianGuiDuKien END,
       capNhatLuc=SYSDATETIME() WHERE maThongBao=@id`);

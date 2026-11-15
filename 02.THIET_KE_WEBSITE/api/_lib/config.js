@@ -55,15 +55,7 @@ export const config = Object.freeze({
   nodeEnv: process.env.NODE_ENV || 'development',
   jwtSecret: process.env.JWT_SECRET || 'development-only-change-this-jwt-secret-32chars',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '8h',
-  sqlServer: process.env.SQL_SERVER || 'localhost',
-  sqlPort: process.env.SQL_PORT ? Number(process.env.SQL_PORT) : undefined,
-  sqlAuth: (process.env.SQL_AUTH || 'sql').toLowerCase(),
-  sqlDatabase: process.env.SQL_DATABASE || 'HuongSpaDB',
-  sqlUser: process.env.SQL_USER || '',
-  sqlPassword: process.env.SQL_PASSWORD || '',
-  sqlEncrypt: process.env.SQL_ENCRYPT === 'true',
-  sqlTrustServerCertificate: process.env.SQL_TRUST_SERVER_CERT !== 'false',
-  sqlPoolMax: Math.max(1, Number(process.env.SQL_POOL_MAX || (isServerless ? 3 : 10))),
+  databaseUrl: process.env.DATABASE_URL || '',
   uploadDir: resolveProjectPath(process.env.UPLOAD_DIR, defaultUploadDir()),
   publicBaseUrl: (process.env.PUBLIC_BASE_URL || defaultPublicBaseUrl(port)).replace(/\/$/, ''),
   pdfFontPath: resolveProjectPath(process.env.PDF_FONT_PATH, 'C:/Windows/Fonts/arial.ttf'),
@@ -74,8 +66,6 @@ export const config = Object.freeze({
   n8nMaxRetries: Math.max(1, Number(process.env.N8N_MAX_RETRIES || 5)),
   // Bí mật cho endpoint /api/jobs/tick (thay cho các timer chạy nền của bản chạy Node liên tục).
   jobsSecret: process.env.JOBS_SECRET || process.env.N8N_WEBHOOK_SECRET || '',
-  // Tự động chạy migration/seed ở lần kết nối CSDL đầu tiên của mỗi function.
-  autoSetup: process.env.AUTO_SETUP !== 'false',
 });
 
 if (config.nodeEnv === 'production' && config.jwtSecret.startsWith('development-only')) {

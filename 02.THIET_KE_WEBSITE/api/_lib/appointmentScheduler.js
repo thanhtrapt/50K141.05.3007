@@ -1,4 +1,4 @@
-import { getPool,inTransaction,requestFor,sqlTypes } from './database.js';
+import { getPool,inTransaction,requestFor,dbTypes } from './database.js';
 import { refreshExpiryAlerts } from './stockService.js';
 
 let timer;
@@ -10,9 +10,9 @@ export async function markDueReminders() {
   if(busy)return;
   busy=true;
   try {
-    const result=await getPool().request().query(`UPDATE dbo.NhatKyThongBao SET trangThai=N'Đến hạn',capNhatLuc=SYSDATETIME()
-      OUTPUT inserted.maThongBao
-      WHERE trangThai=N'Chờ gửi' AND suKien=N'APPOINTMENT_REMINDER' AND thoiGianGuiDuKien<=SYSDATETIME()`);
+    const result=await getPool().request().query(`UPDATE dbo.NhatKyThongBao SET trangThai='Đến hạn',capNhatLuc=CURRENT_TIMESTAMP
+      WHERE trangThai='Chờ gửi' AND suKien='APPOINTMENT_REMINDER' AND thoiGianGuiDuKien<=CURRENT_TIMESTAMP
+      RETURNING maThongBao`);
     if(result.recordset.length)process.stdout.write(`Có ${result.recordset.length} lời nhắc lịch hẹn đến hạn, chờ bộ gửi n8n.\n`);
   } catch(error) {
     console.error('Không thể quét lịch nhắc hẹn:',error.message);
@@ -48,7 +48,7 @@ export async function dailyExpiryScan() {
         WHERE maCauHinh=N'LAST_EXPIRY_SCAN_DATE'`)).recordset[0];
       if(row?.giaTri>=date)return null;
       const total=await refreshExpiryAlerts(transaction);
-      await requestFor(transaction).input('date',sqlTypes.NVarChar(4000),date).query(`UPDATE dbo.CauHinhHeThong SET giaTri=@date,capNhatLuc=SYSDATETIME()
+      await requestFor(transaction).input('date',dbTypes.NVarChar(4000),date).query(`UPDATE dbo.CauHinhHeThong SET giaTri=@date,capNhatLuc=SYSDATETIME()
         WHERE maCauHinh=N'LAST_EXPIRY_SCAN_DATE'`);
       return total;
     });

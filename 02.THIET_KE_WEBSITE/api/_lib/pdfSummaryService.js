@@ -5,7 +5,7 @@ import { pipeline } from 'node:stream/promises';
 import PDFDocument from 'pdfkit';
 import sharp from 'sharp';
 import { config } from './config.js';
-import { getPool,sqlTypes } from './database.js';
+import { getPool,dbTypes } from './database.js';
 
 function localImagePath(value) {
   if(!value)return null;
@@ -34,12 +34,12 @@ function text(doc,label,value,{bold=false}={}) {
 
 export async function generateSummaryPdf({packageId,sessionId,milestone}) {
   const pool=getPool();
-  const head=(await pool.request().input('id',sqlTypes.Char(10),packageId).query(`SELECT d.maDonMua AS packageId,d.ngayMua AS purchaseDate,d.giaMua AS purchasePrice,
+  const head=(await pool.request().input('id',dbTypes.Char(10),packageId).query(`SELECT d.maDonMua AS packageId,d.ngayMua AS purchaseDate,d.giaMua AS purchasePrice,
     d.trangThaiThanhToan AS paymentStatus,d.trangThaiHoanThanh AS packageStatus,d.soBuoiDaThucHien AS sessionsCompleted,d.fileTongHop AS currentFile,
     k.maKhachHang AS customerId,k.hoTen AS customerName,k.soDienThoai AS phone,k.ngaySinh AS dateOfBirth,s.maDichVu AS serviceId,s.tenDV AS serviceName,s.tongSoBuoi AS totalSessions
     FROM dbo.DonMuaDV d JOIN dbo.KhachHang k ON k.maKhachHang=d.maKhachHang JOIN dbo.DichVu s ON s.maDichVu=d.maDichVu WHERE d.maDonMua=@id`)).recordset[0];
   if(!head)throw new Error('Không tìm thấy liệu trình để tạo PDF.');
-  const sessions=(await pool.request().input('id',sqlTypes.Char(10),packageId).input('current',sqlTypes.Char(10),sessionId).query(`SELECT c.maCT_DonMua AS id,
+  const sessions=(await pool.request().input('id',dbTypes.Char(10),packageId).input('current',dbTypes.Char(10),sessionId).query(`SELECT c.maCT_DonMua AS id,
     COALESCE(c.tenBuoiSnapshot,c.tenBuoi,t.tenBuoi) AS name,COALESCE(c.kyThuatSnapshot,t.kyThuat) AS technique,
     COALESCE(c.thoiGianThucHienSnapshot,t.thoiGianThucHien) AS durationMinutes,COALESCE(c.myPhamSDSnapshot,t.myPhamSD) AS cosmeticsUsage,
     c.ngayThucHien AS performedAt,c.ketQua AS result,c.trangThaiThucHien AS status,c.hinhAnh AS image,a.hoTen AS staffName

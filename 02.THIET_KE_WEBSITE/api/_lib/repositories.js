@@ -1,4 +1,4 @@
-import { getPool, requestFor, sqlTypes } from './database.js';
+import { getPool, requestFor, dbTypes } from './database.js';
 import { nowIso } from './utils.js';
 
 const trim = (row) => Object.fromEntries(Object.entries(row || {}).map(([key,value]) => [key, typeof value === 'string' ? value.trimEnd() : value]));
@@ -19,11 +19,11 @@ export async function queryMany(sql, bind = {}) {
 
 export async function insertAudit({transaction,user,action,entity,entityId,before,after}) {
   const r=requestFor(transaction);
-  r.input('maTK',sqlTypes.Char(10),user?.id || null).input('role',sqlTypes.NVarChar(20),user?.role || 'SYSTEM')
-    .input('action',sqlTypes.NVarChar(100),action).input('entity',sqlTypes.NVarChar(100),entity)
-    .input('entityId',sqlTypes.NVarChar(50),entityId == null ? null : String(entityId))
-    .input('before',sqlTypes.NVarChar(sqlTypes.MAX),before == null ? null : JSON.stringify(before))
-    .input('after',sqlTypes.NVarChar(sqlTypes.MAX),after == null ? null : JSON.stringify(after));
+  r.input('maTK',dbTypes.Char(10),user?.id || null).input('role',dbTypes.NVarChar(20),user?.role || 'SYSTEM')
+    .input('action',dbTypes.NVarChar(100),action).input('entity',dbTypes.NVarChar(100),entity)
+    .input('entityId',dbTypes.NVarChar(50),entityId == null ? null : String(entityId))
+    .input('before',dbTypes.NVarChar(dbTypes.MAX),before == null ? null : JSON.stringify(before))
+    .input('after',dbTypes.NVarChar(dbTypes.MAX),after == null ? null : JSON.stringify(after));
   await r.query(`INSERT INTO dbo.NhatKyThaoTac(maTK,vaiTro,hanhDong,doiTuong,maDoiTuong,giaTriTruoc,giaTriSau)
     VALUES(@maTK,@role,@action,@entity,@entityId,@before,@after)`);
 }
@@ -43,8 +43,8 @@ export async function nextCode(prefix, transaction) {
   const suffixWidth=10-prefix.length;
   if(suffixWidth<1)throw new Error('Tiền tố mã định danh vượt quá độ dài cột.');
   const r=requestFor(transaction);
-  const result=await r.query(`SELECT ISNULL(MAX(TRY_CONVERT(INT,RIGHT(RTRIM(${config.column}),${suffixWidth}))),0)+1 AS nextValue
-    FROM dbo.${config.table} WITH (UPDLOCK,HOLDLOCK)`);
+  const result=await r.query(`SELECT COALESCE(MAX(NULLIF(regexp_replace(RIGHT(RTRIM(${config.column}),${suffixWidth}), '[^0-9]', '', 'g'), '')::integer),0)+1 AS "nextValue"
+    FROM public."${config.table}"`);
   return formatEntityCode(prefix,result.recordset[0].nextValue);
 }
 
@@ -58,8 +58,8 @@ export function formatEntityCode(prefix,sequence,width=10) {
 export async function nextLotCode(receiptDate, transaction) {
   const day=receiptDate.slice(8,10)+receiptDate.slice(5,7)+receiptDate.slice(2,4);
   const r=requestFor(transaction);
-  const result=await r.input('prefix',sqlTypes.VarChar(7),`${day}-`).query(`SELECT ISNULL(MAX(TRY_CONVERT(INT,RIGHT(RTRIM(maLo),3))),0)+1 AS nextValue
-    FROM dbo.LoHang WITH (UPDLOCK,HOLDLOCK) WHERE maLo LIKE @prefix+'%'`);
+  const result=await r.input('prefix',dbTypes.VarChar(7),`${day}-`).query(`SELECT COALESCE(MAX(NULLIF(regexp_replace(RIGHT(RTRIM(maLo),3), '[^0-9]', '', 'g'), '')::integer),0)+1 AS "nextValue"
+    FROM public."LoHang" WHERE maLo LIKE @prefix || '%'`);
   return formatLotCode(receiptDate,result.recordset[0].nextValue);
 }
 
