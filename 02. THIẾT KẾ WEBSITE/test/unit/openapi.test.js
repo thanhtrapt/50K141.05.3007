@@ -21,7 +21,7 @@ function endpointFiles(dir) {
 // Mỗi tệp trong api/ là một Vercel Serverless Function và tự công bố route của nó
 // qua `handler.route` do `endpoint()` trong api/_lib/http.js gắn vào.
 const endpoints=[];
-for(const file of endpointFiles(path.join(root,'api'))) {
+for(const file of endpointFiles(path.join(root,'api','_routes'))) {
   const module=await import(pathToFileURL(file).href);
   const route=module.default?.route;
   assert.ok(route,`${path.relative(root,file)} phải xuất handler tạo bởi endpoint()`);

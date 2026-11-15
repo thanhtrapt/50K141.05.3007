@@ -20,7 +20,7 @@ function endpointFiles(dir) {
 }
 
 const routes = new Map();
-for (const file of endpointFiles(path.join(root, 'api'))) {
+for (const file of endpointFiles(path.join(root, 'api', '_routes'))) {
   const route = (await import(pathToFileURL(file).href)).default?.route;
   assert.ok(route, `${path.relative(root, file)} phải xuất handler tạo bởi endpoint()`);
   routes.set(route.path, route);
