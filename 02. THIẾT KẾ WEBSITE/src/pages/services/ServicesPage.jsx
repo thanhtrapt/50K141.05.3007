@@ -9,6 +9,8 @@ import PageListToolbar from '../../components/ui/PageListToolbar.jsx';
 import Pagination from '../../components/ui/Pagination.jsx';
 import SearchBox from '../../components/ui/SearchBox.jsx';
 import { formatCurrency, services as initialServices } from '../../data/mockData.js';
+import { useAuth } from '../../auth/AuthContext.jsx';
+import ForbiddenPage from '../ForbiddenPage.jsx';
 import ServiceDetailPage from './ServiceDetailPage.jsx';
 import ServiceFormPage from './ServiceFormPage.jsx';
 import ServiceSessionDetailPage from './ServiceSessionDetailPage.jsx';
@@ -16,6 +18,9 @@ import ServiceSessionDetailPage from './ServiceSessionDetailPage.jsx';
 const basePath = '/dich-vu';
 
 export default function ServicesPage() {
+  const { can } = useAuth();
+  // STAFF chỉ được xem dịch vụ; chỉ OWNER được thêm, sửa, xóa.
+  const canManageServices = can('services:write');
   const [items, setItems] = useState(initialServices);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
@@ -56,6 +61,9 @@ export default function ServicesPage() {
   };
 
   if (isCreate || editingId) {
+    if (!canManageServices) {
+      return <ForbiddenPage message="Chức năng thêm/sửa dịch vụ chỉ dành cho Chủ Spa. Tài khoản Nhân viên chỉ được xem thông tin dịch vụ." />;
+    }
     if (editingId && !record) {
       return <FeatureNotFound heading="DANH SÁCH DỊCH VỤ" message="Không tìm thấy dịch vụ phù hợp!" onBack={() => navigate(basePath)} />;
     }
@@ -78,6 +86,7 @@ export default function ServicesPage() {
         <ServiceSessionDetailPage
           service={selected}
           sessionNumber={sessionNumber}
+          canWrite={canManageServices}
           onBack={() => navigate(`${basePath}/${serviceId}`)}
           onEdit={() => navigate(`${basePath}/${serviceId}/chinh-sua`)}
           onDelete={deleteService}
@@ -87,6 +96,7 @@ export default function ServicesPage() {
     return (
       <ServiceDetailPage
         service={selected}
+        canWrite={canManageServices}
         onBack={() => navigate(basePath)}
         onEdit={() => navigate(`${basePath}/${serviceId}/chinh-sua`)}
         onDelete={deleteService}
@@ -108,7 +118,7 @@ export default function ServicesPage() {
       <PageListToolbar
         className="service-toolbar"
         search={<SearchBox value={query} onChange={(value) => { setQuery(value); setPage(1); }} placeholder="Nhập tên dịch vụ cần tìm kiếm..." />}
-        actions={<Button onClick={() => navigate(`${basePath}/tao-moi`)}><Plus size={18} />Thêm dịch vụ</Button>}
+        actions={canManageServices ? <Button onClick={() => navigate(`${basePath}/tao-moi`)}><Plus size={18} />Thêm dịch vụ</Button> : null}
       />
       <section className="panel page-list-panel">
         <DataTable columns={columns} rows={pageItems} rowKey="id" emptyMessage="Không tìm thấy dịch vụ phù hợp!" />

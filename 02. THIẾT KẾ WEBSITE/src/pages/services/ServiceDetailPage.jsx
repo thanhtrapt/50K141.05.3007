@@ -5,7 +5,7 @@ import Modal from '../../components/ui/Modal.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import { formatCurrency } from '../../data/mockData.js';
 
-export default function ServiceDetailPage({ service, onBack, onEdit, onDelete, onSessionDetail }) {
+export default function ServiceDetailPage({ service, canWrite = false, onBack, onEdit, onDelete, onSessionDetail }) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const sessions = useMemo(() => {
     if (service.sessionDetails?.length) return service.sessionDetails;
@@ -32,10 +32,12 @@ export default function ServiceDetailPage({ service, onBack, onEdit, onDelete, o
       <section className="panel service-detail__sessions">
         <div className="service-detail__section-heading">
           <h2>Buổi thực hiện</h2>
-          <div className="service-detail__actions">
-            <Button variant="secondary" onClick={onEdit}><Pencil size={16} />Chỉnh sửa</Button>
-            <Button variant="secondary" className="service-detail__delete" onClick={() => setDeleteConfirmOpen(true)}><Trash2 size={16} />Xóa</Button>
-          </div>
+          {canWrite && (
+            <div className="service-detail__actions">
+              <Button variant="secondary" onClick={onEdit}><Pencil size={16} />Chỉnh sửa</Button>
+              <Button variant="secondary" className="service-detail__delete" onClick={() => setDeleteConfirmOpen(true)}><Trash2 size={16} />Xóa</Button>
+            </div>
+          )}
         </div>
         {sessions.length ? (
           <div className="service-detail__session-grid">
@@ -58,15 +60,17 @@ export default function ServiceDetailPage({ service, onBack, onEdit, onDelete, o
         <p>{service.result || 'Chưa có kết quả dịch vụ.'}</p>
       </section>
 
-      <Modal open={deleteConfirmOpen} title="XÓA THÔNG TIN DỊCH VỤ" onClose={() => setDeleteConfirmOpen(false)} size="small">
-        <div className="confirm-content">
-          <p>Bạn có chắc chắn muốn xóa dịch vụ <strong>{service.name}</strong> không?</p>
-          <div className="modal-form-actions">
-            <Button variant="secondary" onClick={() => setDeleteConfirmOpen(false)}>Hủy</Button>
-            <Button variant="danger" onClick={onDelete}>Xóa</Button>
+      {canWrite && (
+        <Modal open={deleteConfirmOpen} title="XÓA THÔNG TIN DỊCH VỤ" onClose={() => setDeleteConfirmOpen(false)} size="small">
+          <div className="confirm-content">
+            <p>Bạn có chắc chắn muốn xóa dịch vụ <strong>{service.name}</strong> không?</p>
+            <div className="modal-form-actions">
+              <Button variant="secondary" onClick={() => setDeleteConfirmOpen(false)}>Hủy</Button>
+              <Button variant="danger" onClick={onDelete}>Xóa</Button>
+            </div>
           </div>
-        </div>
-      </Modal>
+        </Modal>
+      )}
     </div>
   );
 }

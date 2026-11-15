@@ -8,6 +8,7 @@ import SearchBox from '../../components/ui/SearchBox.jsx';
 import SelectField from '../../components/ui/SelectField.jsx';
 import TextField from '../../components/ui/TextField.jsx';
 import { apiRequest } from '../../api.js';
+import { useAuth } from '../../auth/AuthContext.jsx';
 
 const halfHourLabels = Array.from({ length: 25 }, (_, index) => {
   const totalMinutes = 8 * 60 + index * 30;
@@ -50,6 +51,9 @@ function timePosition(value) {
 }
 
 export default function AppointmentsPage() {
+  const { can } = useAuth();
+  // STAFF chỉ được xem lịch hẹn; OWNER mới có quyền tạo, điều chỉnh và hủy.
+  const canManageAppointments = can('appointments:write');
   const [events, setEvents] = useState([]);
   const [query, setQuery] = useState('');
   const [weekShift, setWeekShift] = useState(0);
@@ -127,6 +131,7 @@ export default function AppointmentsPage() {
   }, []);
 
   const openEdit = (appointment) => {
+    if (!canManageAppointments) return;
     setEditingId(appointment.id);
     setAppointmentForm({
       customer: appointment.customer,
@@ -141,6 +146,7 @@ export default function AppointmentsPage() {
   };
 
   const openCreate = () => {
+    if (!canManageAppointments) return;
     setEditingId(null);
     setAppointmentForm(emptyAppointment);
     setFormOpen(true);
@@ -148,6 +154,7 @@ export default function AppointmentsPage() {
 
   const createAppointment = async (event) => {
     event.preventDefault();
+    if (!canManageAppointments) return;
     if (editingId) {
       try {
         await apiRequest(`/api/appointments/${editingId}`, { method: 'PUT', body: { date: appointmentForm.date, startTime: appointmentForm.start, note: appointmentForm.note } });
@@ -186,7 +193,7 @@ export default function AppointmentsPage() {
       <PageListToolbar
         className="appointment-toolbar"
         search={<SearchBox value={query} onChange={setQuery} placeholder="Nhập tên khách hàng cần tìm..." className="appointment-search" />}
-        actions={<Button onClick={openCreate}><Plus size={18} />Tạo lịch hẹn</Button>}
+        actions={canManageAppointments ? <Button onClick={openCreate}><Plus size={18} />Tạo lịch hẹn</Button> : null}
       />
       <div className="appointment-summary"><CalendarDays size={15} /> {visibleEvents.length} lịch hẹn trong tuần · {visibleEvents.filter((event) => event.date === dateKey(today)).length} lịch hẹn hôm nay</div>
       <div className="calendar-toolbar">
@@ -253,10 +260,12 @@ export default function AppointmentsPage() {
             <strong>{selectedAppointment.date}</strong>
             <span>{selectedAppointment.start}–{selectedAppointment.end} · {selectedAppointmentDuration} phút</span>
           </div>
-          <div className="appointment-detail-panel__actions">
-            <Button variant="secondary" onClick={() => openEdit(selectedAppointment)}><Pencil size={15} />Điều chỉnh lịch hẹn</Button>
-            <Button variant="secondary" className="appointment-detail-panel__delete" onClick={() => setConfirmDeleteOpen(true)}><Trash2 size={15} />Hủy lịch hẹn</Button>
-          </div>
+          {canManageAppointments && (
+            <div className="appointment-detail-panel__actions">
+              <Button variant="secondary" onClick={() => openEdit(selectedAppointment)}><Pencil size={15} />Điều chỉnh lịch hẹn</Button>
+              <Button variant="secondary" className="appointment-detail-panel__delete" onClick={() => setConfirmDeleteOpen(true)}><Trash2 size={15} />Hủy lịch hẹn</Button>
+            </div>
+          )}
         </div>
 
         <dl className="appointment-detail-panel__facts">
@@ -270,7 +279,7 @@ export default function AppointmentsPage() {
 
         <section className="appointment-detail-panel__note">
           <h3>Ghi chú</h3>
-          {noteEditorOpen ? (
+          {canManageAppointments && noteEditorOpen ? (
             <div className="appointment-detail-panel__note-editor">
               <textarea aria-label="Ghi chú lịch hẹn" value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} />
               <div>
@@ -284,7 +293,7 @@ export default function AppointmentsPage() {
           ) : <p>{selectedAppointment.note || '—'}</p>}
         </section>
 
-        {!noteEditorOpen && <Button variant="secondary" className="appointment-detail-panel__add-note" onClick={() => {
+        {canManageAppointments && !noteEditorOpen && <Button variant="secondary" className="appointment-detail-panel__add-note" onClick={() => {
           setNoteDraft(selectedAppointment.note || '');
           setNoteEditorOpen(true);
         }}><NotebookPen size={17} />Thêm ghi chú</Button>}

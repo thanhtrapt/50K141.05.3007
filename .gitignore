@@ -427,3 +427,16 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# ---- Dự án Hương Spa (Vite Frontend + Vercel Serverless Functions) ----
+node_modules/
+dist/
+.vite/
+.vercel/
+.env
+.env.*
+!.env.example
+public/uploads/
+*.log
+Thumbs.db
+.DS_Store

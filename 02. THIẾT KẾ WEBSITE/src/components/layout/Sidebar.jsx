@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ClipboardList,
   House,
+  LogOut,
   Package,
   PackageCheck,
   Sparkles,
@@ -11,25 +12,33 @@ import {
   UserRound,
   UsersRound,
 } from 'lucide-react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../auth/AuthContext.jsx';
+import { roleLabel } from '../../auth/permissions.js';
 
 const navigationItems = [
-  { to: '/trang-chu', label: 'Trang chủ', icon: House },
-  { to: '/lich-hen', label: 'Lịch hẹn', icon: CalendarDays },
+  { to: '/trang-chu', label: 'Trang chủ', icon: House, permission: 'dashboard:read' },
+  { to: '/lich-hen', label: 'Lịch hẹn', icon: CalendarDays, permission: 'appointments:read' },
   {
     to: '/khach-hang',
     label: 'Khách hàng',
     icon: UsersRound,
+    permission: 'customers:read',
     children: [
-      { to: '/ho-so-khach-hang', label: 'Hồ sơ khách hàng', icon: UserRound },
-      { to: '/danh-gia', label: 'Đánh giá', icon: Star },
+      { to: '/ho-so-khach-hang', label: 'Hồ sơ khách hàng', icon: UserRound, permission: 'customers:read' },
+      { to: '/danh-gia', label: 'Đánh giá', icon: Star, permission: 'reviews:read' },
     ],
   },
-  { to: '/dich-vu', label: 'Dịch vụ', icon: Sparkles },
-  { to: '/my-pham', label: 'Mỹ phẩm', icon: Package },
-  { to: '/phieu-nhap-kho', label: 'Phiếu nhập kho', icon: ClipboardList },
-  { to: '/phieu-xuat-kho', label: 'Phiếu xuất kho nội bộ', icon: PackageCheck },
+  { to: '/dich-vu', label: 'Dịch vụ', icon: Sparkles, permission: 'services:read' },
+  { to: '/my-pham', label: 'Mỹ phẩm', icon: Package, permission: 'cosmetics:read' },
+  // Phiếu nhập kho chỉ OWNER thấy; menu tự ẩn với STAFF và route vẫn bị chặn bằng RouteGuard.
+  { to: '/phieu-nhap-kho', label: 'Phiếu nhập kho', icon: ClipboardList, permission: 'stock-receipts:read' },
+  { to: '/phieu-xuat-kho', label: 'Phiếu xuất kho nội bộ', icon: PackageCheck, permission: 'stock-issues:read' },
 ];
+
+function initialsOf(name) {
+  return name.trim().split(/\s+/).slice(-2).map((word) => word.charAt(0)).join('').toLocaleUpperCase('vi-VN');
+}
 
 function NavigationLink({ to, label, icon: Icon, onNavigate, onToggle, child = false, expandable = false, expanded = false }) {
   return (
@@ -50,10 +59,22 @@ function NavigationLink({ to, label, icon: Icon, onNavigate, onToggle, child = f
 
 export default function Sidebar({ onNavigate }) {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const { user, role, can, logout } = useAuth();
   const [customersExpanded, setCustomersExpanded] = useState(() => pathname.startsWith('/ho-so-khach-hang') || pathname.startsWith('/danh-gia'));
 
   const toggleCustomers = () => {
     setCustomersExpanded((expanded) => !expanded);
+  };
+
+  const displayName = user?.full_name || user?.name || 'Người dùng';
+  const visibleItems = navigationItems
+    .filter((item) => can(item.permission))
+    .map((item) => (item.children ? { ...item, children: item.children.filter((child) => can(child.permission)) } : item));
+
+  const signOut = () => {
+    logout();
+    navigate('/dang-nhap', { replace: true });
   };
 
   return (
@@ -63,7 +84,7 @@ export default function Sidebar({ onNavigate }) {
       </div>
 
       <nav className="sidebar-navigation">
-        {navigationItems.map(({ to, label, icon: Icon, children }) => children ? (
+        {visibleItems.map(({ to, label, icon: Icon, children }) => children ? (
           <div className={`navigation-group${customersExpanded ? ' navigation-group--expanded' : ''}`} key={to}>
             <NavigationLink to={to} label={label} icon={Icon} expandable expanded={customersExpanded} onToggle={toggleCustomers} />
             <div className="navigation-submenu" id="customer-submenu" aria-hidden={!customersExpanded} inert={!customersExpanded}>
@@ -78,11 +99,14 @@ export default function Sidebar({ onNavigate }) {
       </nav>
 
       <div className="sidebar-user">
-        <span className="sidebar-user__avatar" aria-hidden="true">TH</span>
+        <span className="sidebar-user__avatar" aria-hidden="true">{initialsOf(displayName)}</span>
         <span className="sidebar-user__text">
-          <strong>Lê Thị Thu Hương</strong>
-          <small>Quản trị viên</small>
+          <strong>{displayName}</strong>
+          <small>{roleLabel(role, user?.roleName)}</small>
         </span>
+        <button type="button" className="sidebar-user__logout" onClick={signOut} aria-label="Đăng xuất" title="Đăng xuất">
+          <LogOut aria-hidden="true" size={18} strokeWidth={1.8} />
+        </button>
       </div>
     </aside>
   );

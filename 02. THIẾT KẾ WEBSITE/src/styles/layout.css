@@ -170,6 +170,7 @@
 
 .sidebar-user__text {
   display: grid;
+  flex: 1;
   min-width: 0;
   gap: 1px;
 }
@@ -184,6 +185,36 @@
 .sidebar-user__text small {
   color: var(--color-muted);
   font-size: 14px;
+}
+
+.sidebar-user__logout {
+  display: grid;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  margin-left: auto;
+  place-items: center;
+  color: #806046;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.sidebar-user__logout:hover,
+.sidebar-user__logout:focus-visible {
+  background: #f4e2d0;
+  border-color: #e2cbb6;
+}
+
+.route-guard {
+  display: grid;
+  min-height: 100vh;
+  padding: 24px;
+  place-items: center;
+  color: var(--color-muted);
+  font-size: 15px;
 }
 
 .app-workspace {

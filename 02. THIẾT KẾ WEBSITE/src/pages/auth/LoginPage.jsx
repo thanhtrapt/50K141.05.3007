@@ -1,17 +1,24 @@
 import { useState } from 'react';
 import { Eye, EyeOff, LockKeyhole, UserRound } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import loginReference from '../../../ĐĂNG NHẬP/Desktop - ĐĂNG NHẬP.png';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import Button from '../../components/ui/Button.jsx';
-import { apiRequest } from '../../api.js';
+import { useAuth } from '../../auth/AuthContext.jsx';
+
+// Ảnh tham chiếu thiết kế màn hình đăng nhập (đã sao chép vào public/assets để deploy cùng Frontend).
+const loginReference = '/assets/login-reference.png';
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { login, status } = useAuth();
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState('');
+  const from = location.state?.from || '/trang-chu';
+
+  if (status === 'authenticated') return <Navigate to={from} replace />;
 
   const submit = async (event) => {
     event.preventDefault();
@@ -21,9 +28,8 @@ export default function LoginPage() {
     }
     setError('');
     try {
-      const result = await apiRequest('/api/auth/login', { method: 'POST', auth: false, body: { phone: phone.trim(), password } });
-      window.localStorage.setItem('huong-spa-access-token', result.accessToken);
-      navigate('/trang-chu');
+      await login(phone.trim(), password);
+      navigate(from, { replace: true });
     } catch (requestError) {
       setError(requestError.message || 'Không thể đăng nhập.');
     }

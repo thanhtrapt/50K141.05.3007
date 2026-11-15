@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import RouteGuard from './auth/RouteGuard.jsx';
 import AppShell from './components/layout/AppShell.jsx';
 import AppointmentsPage from './pages/appointments/AppointmentsPage.jsx';
 import LoginPage from './pages/auth/LoginPage.jsx';
@@ -17,7 +18,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/dang-nhap" element={<LoginPage />} />
-      <Route element={<AppShell />}>
+      <Route element={<RouteGuard><AppShell /></RouteGuard>}>
         <Route index element={<Navigate to="/trang-chu" replace />} />
         <Route path="trang-chu" element={<DashboardPage />} />
         <Route path="lich-hen/*" element={<AppointmentsPage />} />
@@ -27,7 +28,17 @@ export default function App() {
         <Route path="danh-gia/*" element={<ReviewsPage />} />
         <Route path="dich-vu/*" element={<ServicesPage />} />
         <Route path="my-pham/*" element={<ProductsPage />} />
-        <Route path="phieu-nhap-kho/*" element={<InboundPage />} />
+        <Route
+          path="phieu-nhap-kho/*"
+          element={(
+            <RouteGuard
+              permission="stock-receipts:read"
+              forbiddenMessage="Phiếu nhập kho chỉ dành cho Chủ Spa. Tài khoản Nhân viên không được xem hoặc tạo phiếu nhập kho."
+            >
+              <InboundPage />
+            </RouteGuard>
+          )}
+        />
         <Route path="phieu-xuat-kho" element={<OutboundPage />} />
         <Route path="canh-bao/ton-kho" element={<AlertsPage />} />
         <Route path="canh-bao/han-su-dung" element={<AlertsPage />} />
