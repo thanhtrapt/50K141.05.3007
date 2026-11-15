@@ -38,16 +38,16 @@ function text(doc,label,value,{bold=false}={}) {
 
 export async function generateSummaryPdf({packageId,sessionId,milestone}) {
   const pool=getPool();
-  const head=(await pool.request().input('id',dbTypes.Char(10),packageId).query(`SELECT d.maDonMua AS packageId,d.ngayMua AS purchaseDate,d.giaMua AS purchasePrice,
+  const head=(await pool.request().input('id',dbTypes.Char(10),packageId).query(`SELECT d.maDonMua AS packageId,d.ngayMua AS purchaseDate,s.giaDV AS purchasePrice,
     d.trangThaiThanhToan AS paymentStatus,d.trangThaiHoanThanh AS packageStatus,d.soBuoiDaThucHien AS sessionsCompleted,d.fileTongHop AS currentFile,
     k.maKhachHang AS customerId,k.hoTen AS customerName,k.soDienThoai AS phone,k.ngaySinh AS dateOfBirth,s.maDichVu AS serviceId,s.tenDV AS serviceName,s.tongSoBuoi AS totalSessions
     FROM dbo.DonMuaDV d JOIN dbo.KhachHang k ON k.maKhachHang=d.maKhachHang JOIN dbo.DichVu s ON s.maDichVu=d.maDichVu WHERE d.maDonMua=@id`)).recordset[0];
   if(!head)throw new Error('Không tìm thấy liệu trình để tạo PDF.');
-  const sessions=(await pool.request().input('id',dbTypes.Char(10),packageId).input('current',dbTypes.Char(10),sessionId).query(`SELECT c.maCT_DonMua AS id,
-    COALESCE(c.tenBuoiSnapshot,c.tenBuoi,t.tenBuoi) AS name,COALESCE(c.kyThuatSnapshot,t.kyThuat) AS technique,
-    COALESCE(c.thoiGianThucHienSnapshot,t.thoiGianThucHien) AS durationMinutes,COALESCE(c.myPhamSDSnapshot,t.myPhamSD) AS cosmeticsUsage,
-    c.ngayThucHien AS performedAt,c.ketQua AS result,c.trangThaiThucHien AS status,c.hinhAnh AS image,a.tenDangNhap AS staffName
-    FROM dbo.CT_DonMua c LEFT JOIN dbo.CT_DichVu t ON t.maCT_DichVu=c.maCT_DichVu LEFT JOIN dbo.TaiKhoan a ON a.maTK=c.maTK
+  const sessions=(await pool.request().input('id',dbTypes.Char(10),packageId).query(`SELECT c.maCT_DonMua AS id,
+    COALESCE(c.tenBuoi,t.tenBuoi) AS name,t.kyThuat AS technique,
+    t.thoiGianThucHien AS durationMinutes,t.myPhamSD AS cosmeticsUsage,
+    c.ngayThucHien AS performedAt,c.ketQua AS result,c.trangThaiThucHien AS status,c.hinhAnh AS image,NULL AS staffName
+    FROM dbo.CT_DonMua c LEFT JOIN dbo.CT_DichVu t ON t.maCT_DichVu=c.maCT_DichVu
     WHERE c.maDonMua=@id AND c.trangThaiThucHien=N'Đã hoàn thành' ORDER BY c.maCT_DonMua`)).recordset;
   if(!sessions.some(row=>row.id.trim()===sessionId.trim()))throw new Error('Buổi dịch vụ chưa hoàn thành hoặc không thuộc liệu trình.');
   await Promise.all([fs.access(config.pdfFontPath),fs.access(config.pdfBoldFontPath)]);

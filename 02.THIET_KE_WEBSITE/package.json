@@ -13,8 +13,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test test/unit/*.test.js",
-    "test:integration": "node --test test/integration/workflow.test.js",
-    "test:all": "node --test test/unit/*.test.js test/integration/workflow.test.js"
+    "test:integration": "node --test test/integration/*.test.js",
+    "test:all": "node --test test/unit/*.test.js test/integration/*.test.js"
   },
   "dependencies": {
     "@fontsource/noto-sans": "^5.3.0",

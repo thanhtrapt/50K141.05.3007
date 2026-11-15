@@ -17,15 +17,10 @@ export async function queryMany(sql, bind = {}) {
   return result.recordset.map(trim);
 }
 
-export async function insertAudit({transaction,user,action,entity,entityId,before,after}) {
-  const r=requestFor(transaction);
-  r.input('maTK',dbTypes.Char(10),user?.id || null).input('role',dbTypes.NVarChar(20),user?.role || 'SYSTEM')
-    .input('action',dbTypes.NVarChar(100),action).input('entity',dbTypes.NVarChar(100),entity)
-    .input('entityId',dbTypes.NVarChar(50),entityId == null ? null : String(entityId))
-    .input('before',dbTypes.NVarChar(dbTypes.MAX),before == null ? null : JSON.stringify(before))
-    .input('after',dbTypes.NVarChar(dbTypes.MAX),after == null ? null : JSON.stringify(after));
-  await r.query(`INSERT INTO dbo.NhatKyThaoTac(maTK,vaiTro,hanhDong,doiTuong,maDoiTuong,giaTriTruoc,giaTriSau)
-    VALUES(@maTK,@role,@action,@entity,@entityId,@before,@after)`);
+// Schema thật (Supabase) không có bảng NhatKyThaoTac. Giữ nguyên chữ ký hàm để
+// các call-site hiện tại không phải sửa, nhưng không ghi audit để tránh 42P01.
+export async function insertAudit() {
+  return { skipped: true, reason: 'NhatKyThaoTac is not part of the current schema' };
 }
 
 const codeTables={
@@ -85,9 +80,10 @@ export function formatLotCode(receiptDate,counter) {
   return `${day}-${String(Number(counter)).padStart(3,'0')}`;
 }
 
+// Bảng CauHinhHeThong không có trong schema thật; trả về rỗng để nơi gọi dùng
+// giá trị mặc định thay vì phát sinh lỗi 42P01.
 export async function getConfigMap() {
-  const rows=await queryMany('SELECT maCauHinh AS [key],giaTri AS value,kieuGiaTri AS valueType,moTa AS description,capNhatLuc AS updatedAt FROM dbo.CauHinhHeThong ORDER BY maCauHinh');
-  return Object.fromEntries(rows.map(row=>[row.key,{...row,value:row.valueType==='number'?Number(row.value):row.value}]));
+  return {};
 }
 
 export { trim };

@@ -46,14 +46,14 @@ export function customerFields(body,{partial=false}={}) {
 
 async function findCustomer(id,transaction) {
   const row=(await requestFor(transaction).input('id',dbTypes.Char(10),id).query(`SELECT maKhachHang AS id,hoTen AS name,ngaySinh AS dateOfBirth,soDienThoai AS phone,
-    soLanHuyLich AS cancellationCount,ngayTao AS createdAt FROM dbo.KhachHang WHERE maKhachHang=@id`)).recordset[0];
+    soLanHuyLich AS cancellationCount FROM dbo.KhachHang WHERE maKhachHang=@id`)).recordset[0];
   if(!row)throw notFound('Không tìm thấy khách hàng phù hợp!');
   return {...row,id:row.id.trim(),dateOfBirth:dateText(row.dateOfBirth),cancellationCount:Number(row.cancellationCount)};
 }
 
-async function blacklistLimit(transaction) {
-  const row=(await requestFor(transaction).query("SELECT giaTri FROM dbo.CauHinhHeThong WHERE maCauHinh=N'BLACKLIST_CANCEL_LIMIT'")).recordset[0];
-  return Number(row?.giaTri||3);
+async function blacklistLimit() {
+  // CauHinhHeThong không tồn tại trong schema thật; dùng ngưỡng mặc định.
+  return 3;
 }
 
 export async function listCustomers(query={}) {
@@ -66,7 +66,7 @@ export async function listCustomers(query={}) {
 
 async function packageSummaries(customerId,transaction) {
   const rows=(await requestFor(transaction).input('customer',dbTypes.Char(10),customerId).query(`SELECT d.maDonMua AS id,d.ngayMua AS purchaseDate,d.trangThaiThanhToan AS paymentStatus,
-    d.trangThaiHoanThanh AS completionStatus,d.soBuoiDaThucHien AS sessionsCompleted,d.giaMua AS purchasePrice,d.ngayKetThuc AS endedAt,
+    d.trangThaiHoanThanh AS completionStatus,d.soBuoiDaThucHien AS sessionsCompleted,s.giaDV AS purchasePrice,NULL AS endedAt,
     s.maDichVu AS serviceId,s.tenDV AS serviceName,s.tongSoBuoi AS totalSessions
     FROM dbo.DonMuaDV d JOIN dbo.DichVu s ON s.maDichVu=d.maDichVu WHERE d.maKhachHang=@customer ORDER BY d.ngayMua DESC,d.maDonMua DESC`)).recordset;
   return rows.map(row=>({...row,id:row.id.trim(),serviceId:row.serviceId.trim(),purchaseDate:row.purchaseDate,
@@ -174,10 +174,10 @@ export async function assignServicePackage(customerId,body,user) {
   if(errors.length)throw badRequest('Thông tin chưa hoàn tất, yêu cầu nhập lại',errors);
   return inTransaction(async transaction=>{
     const customer=await findCustomer(customerId,transaction);
-    const service=(await requestFor(transaction).input('id',dbTypes.Char(10),serviceId).query(`SELECT maDichVu,tenDV,giaDV,tongSoBuoi FROM dbo.DichVu WITH (UPDLOCK,HOLDLOCK)
-      WHERE maDichVu=@id AND trangThai=1`)).recordset[0];
+    const service=(await requestFor(transaction).input('id',dbTypes.Char(10),serviceId).query(`SELECT maDichVu AS "maDichVu",tenDV AS "tenDV",giaDV AS "giaDV",tongSoBuoi AS "tongSoBuoi" FROM dbo.DichVu WITH (UPDLOCK,HOLDLOCK)
+      WHERE maDichVu=@id`)).recordset[0];
     if(!service)throw notFound('Không tìm thấy dịch vụ phù hợp!');
-    const templates=(await requestFor(transaction).input('id',dbTypes.Char(10),serviceId).query(`SELECT maCT_DichVu,tenBuoi,kyThuat,thoiGianThucHien,myPhamSD
+    const templates=(await requestFor(transaction).input('id',dbTypes.Char(10),serviceId).query(`SELECT maCT_DichVu AS "maCT_DichVu",tenBuoi AS "tenBuoi",kyThuat AS "kyThuat",thoiGianThucHien AS "thoiGianThucHien",myPhamSD AS "myPhamSD"
       FROM dbo.CT_DichVu WITH (HOLDLOCK) WHERE maDichVu=@id ORDER BY maCT_DichVu`)).recordset;
     if(templates.length!==Number(service.tongSoBuoi))throw error(409,'SERVICE_TEMPLATE_MISMATCH','Cấu hình số buổi của dịch vụ chưa khớp chi tiết buổi.');
     const purchasePrice=requestedPurchasePrice??Number(service.giaDV);
@@ -187,17 +187,14 @@ export async function assignServicePackage(customerId,body,user) {
     await requestFor(transaction).input('id',dbTypes.Char(10),packageId).input('date',dbTypes.DateTime2,dateValue)
       .input('payment',dbTypes.NVarChar(50),paymentStatus).input('note',dbTypes.NVarChar(255),note==null?null:String(note))
       .input('service',dbTypes.Char(10),serviceId).input('customer',dbTypes.Char(10),customerId)
-      .input('price',dbTypes.Money,purchasePrice).query(`INSERT INTO dbo.DonMuaDV(maDonMua,ngayMua,trangThaiThanhToan,trangThaiHoanThanh,fileTongHop,soBuoiDaThucHien,ghiChu,maDichVu,maKhachHang,giaMua,ngayKetThuc)
-        VALUES(@id,@date,@payment,N'Chưa thực hiện',NULL,0,@note,@service,@customer,@price,NULL)`);
+      .input('price',dbTypes.Money,purchasePrice).query(`INSERT INTO dbo.DonMuaDV(maDonMua,ngayMua,trangThaiThanhToan,trangThaiHoanThanh,fileTongHop,soBuoiDaThucHien,ghiChu,maDichVu,maKhachHang)
+        VALUES(@id,@date,@payment,N'Chưa thực hiện',NULL,0,@note,@service,@customer)`);
     for(const template of templates) {
       const sessionId=await nextCode('CM',transaction);
       await requestFor(transaction).input('id',dbTypes.Char(10),sessionId).input('name',dbTypes.NVarChar(20),template.tenBuoi)
         .input('servicePackage',dbTypes.Char(10),packageId).input('templateId',dbTypes.Char(10),template.maCT_DichVu)
-        .input('technique',dbTypes.NVarChar(255),template.kyThuat).input('duration',dbTypes.Int,template.thoiGianThucHien)
-        .input('cosmetics',dbTypes.NVarChar(200),template.myPhamSD)
-        .query(`INSERT INTO dbo.CT_DonMua(maCT_DonMua,tenBuoi,trangThaiThucHien,xacNhanKH,maDonMua,maCT_DichVu,
-          tenBuoiSnapshot,kyThuatSnapshot,thoiGianThucHienSnapshot,myPhamSDSnapshot)
-          VALUES(@id,@name,N'Chưa thực hiện',N'Chưa xác nhận',@servicePackage,@templateId,@name,@technique,@duration,@cosmetics)`);
+        .query(`INSERT INTO dbo.CT_DonMua(maCT_DonMua,tenBuoi,trangThaiThucHien,xacNhanKH,maDonMua,maCT_DichVu)
+          VALUES(@id,@name,N'Chưa thực hiện',N'Chưa xác nhận',@servicePackage,@templateId)`);
     }
     const after={maDonMua:packageId,maKhachHang:customerId,maDichVu:serviceId,ngayMua:dateValue,trangThaiThanhToan:paymentStatus,
       trangThaiHoanThanh:'Chưa thực hiện',giaMua:purchasePrice,tongSoBuoi:templates.length,sessions:templates};
@@ -209,28 +206,28 @@ export async function assignServicePackage(customerId,body,user) {
 
 export async function getServicePackage(id) {
   const head=(await getPool().request().input('id',dbTypes.Char(10),id).query(`SELECT d.maDonMua AS id,d.maKhachHang AS customerId,k.hoTen AS customerName,
-    k.soDienThoai AS customerPhone,d.maDichVu AS serviceId,s.tenDV AS serviceName,d.ngayMua AS purchaseDate,d.ngayKetThuc AS endedAt,
-    d.giaMua AS purchasePrice,d.trangThaiThanhToan AS paymentStatus,d.trangThaiHoanThanh AS completionStatus,d.soBuoiDaThucHien AS sessionsCompleted,
+    k.soDienThoai AS customerPhone,d.maDichVu AS serviceId,s.tenDV AS serviceName,d.ngayMua AS purchaseDate,NULL AS endedAt,
+    s.giaDV AS purchasePrice,d.trangThaiThanhToan AS paymentStatus,d.trangThaiHoanThanh AS completionStatus,d.soBuoiDaThucHien AS sessionsCompleted,
     s.tongSoBuoi AS totalSessions,d.fileTongHop AS summaryFile,d.ghiChu AS note
     FROM dbo.DonMuaDV d JOIN dbo.KhachHang k ON k.maKhachHang=d.maKhachHang JOIN dbo.DichVu s ON s.maDichVu=d.maDichVu WHERE d.maDonMua=@id`)).recordset[0];
   if(!head)throw notFound('Không tìm thấy liệu trình phù hợp!');
   const sessions=(await getPool().request().input('id',dbTypes.Char(10),id).query(`SELECT c.maCT_DonMua AS id,c.maCT_DichVu AS templateId,
-    COALESCE(c.tenBuoiSnapshot,c.tenBuoi,t.tenBuoi) AS name,COALESCE(c.kyThuatSnapshot,t.kyThuat) AS technique,
-    COALESCE(c.thoiGianThucHienSnapshot,t.thoiGianThucHien) AS durationMinutes,COALESCE(c.myPhamSDSnapshot,t.myPhamSD) AS cosmeticsUsage,
-    c.ngayThucHien AS performedAt,c.ketQua AS result,c.trangThaiThucHien AS status,c.xacNhanKH AS customerConfirmation,c.hinhAnh AS image,c.ghiChu AS note,a.tenDangNhap AS staffName
-    FROM dbo.CT_DonMua c LEFT JOIN dbo.CT_DichVu t ON t.maCT_DichVu=c.maCT_DichVu LEFT JOIN dbo.TaiKhoan a ON a.maTK=c.maTK
+    COALESCE(c.tenBuoi,t.tenBuoi) AS name,t.kyThuat AS technique,t.thoiGianThucHien AS durationMinutes,t.myPhamSD AS cosmeticsUsage,
+    c.ngayThucHien AS performedAt,c.ketQua AS result,c.trangThaiThucHien AS status,c.xacNhanKH AS customerConfirmation,c.hinhAnh AS image,c.ghiChu AS note,NULL AS staffName
+    FROM dbo.CT_DonMua c LEFT JOIN dbo.CT_DichVu t ON t.maCT_DichVu=c.maCT_DichVu
     WHERE c.maDonMua=@id ORDER BY c.maCT_DonMua`)).recordset;
-  const summaryFiles=(await getPool().request().input('id',dbTypes.Char(10),id).query(`SELECT maTaiLieu AS id,maCT_DonMua AS sessionId,loaiTaiLieu AS milestone,
-    tenTep AS fileName,duongDan AS path,thoiGianTao AS createdAt FROM dbo.TaiLieuTongHop WHERE maDonMua=@id ORDER BY thoiGianTao DESC`)).recordset;
+  // TaiLieuTongHop không có trong schema thật; không còn tệp tổng hợp để trả về.
+  const summaryFiles=[];
   return {...head,id:head.id.trim(),customerId:head.customerId.trim(),serviceId:head.serviceId.trim(),purchasePrice:Number(head.purchasePrice),
     sessionsCompleted:Number(head.sessionsCompleted),totalSessions:Number(head.totalSessions),sessions:sessions.map(x=>({...x,id:x.id.trim(),durationMinutes:Number(x.durationMinutes)})),
     summaryFiles:summaryFiles.map(x=>({...x,sessionId:x.sessionId.trim(),url:`${config.publicBaseUrl}${x.path}`}))};
 }
 
 async function packageAndSession(transaction,packageId,sessionId) {
-  const result=await requestFor(transaction).input('package',dbTypes.Char(10),packageId).input('session',dbTypes.Char(10),sessionId).query(`SELECT d.maDonMua,d.trangThaiHoanThanh,d.maKhachHang,k.hoTen AS customerName,k.soDienThoai AS customerPhone,
-    s.tenDV AS serviceName,c.maCT_DonMua,c.trangThaiThucHien,c.xacNhanKH,c.ghiChu,c.maCT_DichVu,
-    COALESCE(c.tenBuoiSnapshot,c.tenBuoi,t.tenBuoi) AS sessionName,c.tenBuoiSnapshot,c.thoiGianThucHienSnapshot
+  const result=await requestFor(transaction).input('package',dbTypes.Char(10),packageId).input('session',dbTypes.Char(10),sessionId).query(`SELECT d.maDonMua AS "maDonMua",d.trangThaiHoanThanh AS "trangThaiHoanThanh",d.maKhachHang AS "maKhachHang",
+    k.hoTen AS customerName,k.soDienThoai AS customerPhone,
+    s.tenDV AS serviceName,c.maCT_DonMua AS "maCT_DonMua",c.trangThaiThucHien AS "trangThaiThucHien",c.xacNhanKH AS "xacNhanKH",c.ghiChu AS "ghiChu",c.maCT_DichVu AS "maCT_DichVu",
+    COALESCE(c.tenBuoi,t.tenBuoi) AS sessionName,t.thoiGianThucHien AS durationMinutes
     FROM dbo.DonMuaDV d WITH (UPDLOCK,HOLDLOCK) JOIN dbo.CT_DonMua c WITH (UPDLOCK,HOLDLOCK) ON c.maDonMua=d.maDonMua
     JOIN dbo.KhachHang k ON k.maKhachHang=d.maKhachHang JOIN dbo.DichVu s ON s.maDichVu=d.maDichVu LEFT JOIN dbo.CT_DichVu t ON t.maCT_DichVu=c.maCT_DichVu
     WHERE d.maDonMua=@package AND c.maCT_DonMua=@session`);
@@ -239,7 +236,7 @@ async function packageAndSession(transaction,packageId,sessionId) {
 }
 
 async function allPackageSessions(transaction,packageId) {
-  return (await requestFor(transaction).input('id',dbTypes.Char(10),packageId).query(`SELECT maCT_DonMua,trangThaiThucHien FROM dbo.CT_DonMua WITH (UPDLOCK,HOLDLOCK)
+  return (await requestFor(transaction).input('id',dbTypes.Char(10),packageId).query(`SELECT maCT_DonMua AS "maCT_DonMua",trangThaiThucHien AS "trangThaiThucHien" FROM dbo.CT_DonMua WITH (UPDLOCK,HOLDLOCK)
     WHERE maDonMua=@id ORDER BY maCT_DonMua`)).recordset;
 }
 
@@ -249,8 +246,8 @@ export async function startPackageSession(packageId,sessionId,user) {
     if(row.trangThaiThucHien!=='Chưa thực hiện')throw error(409,'SESSION_STATE_INVALID','Buổi dịch vụ không ở trạng thái có thể bắt đầu.');
     const sessions=await allPackageSessions(transaction,packageId);const index=sessions.findIndex(x=>x.maCT_DonMua===row.maCT_DonMua);
     if(sessions.slice(0,index).some(x=>x.trangThaiThucHien!=='Đã hoàn thành'))throw error(409,'SESSION_ORDER_INVALID','Vui lòng hoàn thành buổi trước theo đúng thứ tự!');
-    await requestFor(transaction).input('id',dbTypes.Char(10),sessionId).input('package',dbTypes.Char(10),packageId).input('staff',dbTypes.Char(10),user.id)
-      .query(`UPDATE dbo.CT_DonMua SET trangThaiThucHien=N'Đang thực hiện',ngayThucHien=SYSDATETIME(),maTK=@staff WHERE maCT_DonMua=@id AND maDonMua=@package;
+    await requestFor(transaction).input('id',dbTypes.Char(10),sessionId).input('package',dbTypes.Char(10),packageId)
+      .query(`UPDATE dbo.CT_DonMua SET trangThaiThucHien=N'Đang thực hiện',ngayThucHien=SYSDATETIME() WHERE maCT_DonMua=@id AND maDonMua=@package;
         UPDATE dbo.DonMuaDV SET trangThaiHoanThanh=N'Đang thực hiện' WHERE maDonMua=@package AND trangThaiHoanThanh=N'Chưa thực hiện'`);
     await insertAudit({transaction,user,action:'Bắt đầu buổi dịch vụ',entity:'CT_DonMua',entityId:sessionId,before:{trangThaiThucHien:row.trangThaiThucHien},after:{trangThaiThucHien:'Đang thực hiện'}});
     return {packageId:packageId.trim(),sessionId:sessionId.trim(),status:'Đang thực hiện',message:'Bắt đầu buổi dịch vụ thành công'};
@@ -301,10 +298,11 @@ export async function confirmPackageSession(packageId,sessionId,user=null) {
     const total=Number((await requestFor(transaction).input('id',dbTypes.Char(10),packageId)
       .query('SELECT COUNT(*) AS total FROM dbo.CT_DonMua WHERE maDonMua=@id')).recordset[0].total);
     const isFinished=count===total;
+    // Tính trạng thái trong JS thay vì lặp @id/@count trong CASE: PostgreSQL suy
+    // luận kiểu tham số không nhất quán khi cùng tham số dùng cho int và bigint.
     await requestFor(transaction).input('id',dbTypes.Char(10),packageId).input('count',dbTypes.Int,count)
-      .query(`UPDATE dbo.DonMuaDV SET soBuoiDaThucHien=@count,
-        trangThaiHoanThanh=CASE WHEN @count=(SELECT COUNT(*) FROM dbo.CT_DonMua WHERE maDonMua=@id) THEN N'Đã hoàn thành' ELSE N'Đang thực hiện' END,
-        ngayKetThuc=CASE WHEN @count=(SELECT COUNT(*) FROM dbo.CT_DonMua WHERE maDonMua=@id) THEN SYSDATETIME() ELSE NULL END WHERE maDonMua=@id`);
+      .input('status',dbTypes.NVarChar(50),isFinished?'Đã hoàn thành':'Đang thực hiện')
+      .query('UPDATE dbo.DonMuaDV SET soBuoiDaThucHien=@count,trangThaiHoanThanh=@status WHERE maDonMua=@id');
     const sessions=await allPackageSessions(transaction,packageId);const sessionIndex=sessions.findIndex(x=>x.maCT_DonMua===row.maCT_DonMua)+1;
     const middleSession=Math.ceil(total/2);
     const createSummary=sessionIndex===middleSession||sessionIndex===total;
@@ -321,7 +319,7 @@ export async function confirmPackageSession(packageId,sessionId,user=null) {
 
 export async function listRetailCosmetics(query={}) {
   const result=await getPool().request().query(`SELECT maMyPham AS id,tenMyPham AS name,donViTinh AS unit,giaBan AS price,soLuongTonKho AS stock
-    FROM dbo.MyPham WHERE trangThai=1 AND phanLoai=N'Bán lẻ' ORDER BY tenMyPham`);
+    FROM dbo.MyPham WHERE phanLoai=N'Bán lẻ' ORDER BY tenMyPham`);
   const rows=result.recordset.map(x=>({...x,id:x.id.trim(),price:Number(x.price),stock:Number(x.stock)}));
   const keyword=normalizeVietnamese(query.keyword||'');
   return paginate(keyword?rows.filter(x=>normalizeVietnamese(`${x.id} ${x.name}`).includes(keyword)):rows,query.page,query.limit);
@@ -348,13 +346,13 @@ export async function createRetailSale(customerId,body,user) {
     await findCustomer(customerId,transaction);
     const plans=[];let total=0;
     for(const item of prepared) {
-      const product=(await requestFor(transaction).input('id',dbTypes.Char(10),item.productId).query(`SELECT maMyPham,tenMyPham,donViTinh,giaBan,soLuongTonKho FROM dbo.MyPham WITH (UPDLOCK,HOLDLOCK)
-        WHERE maMyPham=@id AND trangThai=1 AND phanLoai=N'Bán lẻ'`)).recordset[0];
+      const product=(await requestFor(transaction).input('id',dbTypes.Char(10),item.productId).query(`SELECT maMyPham AS "maMyPham",tenMyPham AS "tenMyPham",donViTinh AS "donViTinh",giaBan AS "giaBan",soLuongTonKho AS "soLuongTonKho" FROM dbo.MyPham WITH (UPDLOCK,HOLDLOCK)
+        WHERE maMyPham=@id AND phanLoai=N'Bán lẻ'`)).recordset[0];
       if(!product)throw notFound('Không tìm thấy sản phẩm phù hợp!');
       if(item.count>Number(product.soLuongTonKho))throw badRequest('Giá trị nhập không hợp lệ.',[{field:'items.quantity',message:'Giá trị nhập không hợp lệ.'}]);
       const price=Number(product.giaBan);const lineTotal=price*item.count;total+=lineTotal;
-      const batches=(await requestFor(transaction).input('product',dbTypes.Char(10),item.productId).query(`SELECT maLo,soLuongTonLo,hanSuDung,ngayNhap FROM dbo.LoHang WITH (UPDLOCK,HOLDLOCK)
-        WHERE maMyPham=@product AND soLuongTonLo>0 AND hanSuDung>=CONVERT(date,GETDATE()) ORDER BY hanSuDung ASC,ngayNhap ASC,maLo ASC`)).recordset;
+      const batches=(await requestFor(transaction).input('product',dbTypes.Char(10),item.productId).query(`SELECT maLo AS "maLo",soLuongTonLo AS "soLuongTonLo",hanSuDung AS "hanSuDung" FROM dbo.LoHang WITH (UPDLOCK,HOLDLOCK)
+        WHERE maMyPham=@product AND soLuongTonLo>0 AND hanSuDung>=CONVERT(date,GETDATE()) ORDER BY hanSuDung ASC,maLo ASC`)).recordset;
       const available=batches.reduce((sum,row)=>sum+Number(row.soLuongTonLo),0);
       if(available<item.count)throw badRequest('Giá trị nhập không hợp lệ.',[{field:'items.quantity',message:'Giá trị nhập không hợp lệ.'}]);
       let remaining=item.count;const allocation=[];
@@ -390,10 +388,11 @@ export async function createRetailSale(customerId,body,user) {
 }
 
 export async function listReviews(query={}) {
-  const rows=(await getPool().request().query(`SELECT r.maDanhGia AS id,r.thoiGianDanhGia AS reviewedAt,k.hoTen AS customerName,s.tenDV AS serviceName,
-    r.mucDanhGia AS rating,r.noiDung AS content,k.maKhachHang AS customerId,d.maDonMua AS servicePackageId
-    FROM dbo.DanhGia r JOIN dbo.KhachHang k ON k.maKhachHang=r.maKhachHang
-    LEFT JOIN dbo.DonMuaDV d ON d.maDonMua=r.maDonMua LEFT JOIN dbo.DichVu s ON s.maDichVu=d.maDichVu ORDER BY r.thoiGianDanhGia DESC,r.maDanhGia DESC`)).recordset;
+  // DanhGia không có maDonMua/maTK trong schema thật, nên không thể nối liệu
+  // trình/dịch vụ; giữ nguyên hình dạng phản hồi với giá trị null.
+  const rows=(await getPool().request().query(`SELECT r.maDanhGia AS id,r.thoiGianDanhGia AS reviewedAt,k.hoTen AS customerName,NULL AS serviceName,
+    r.mucDanhGia AS rating,r.noiDung AS content,k.maKhachHang AS customerId,NULL AS servicePackageId
+    FROM dbo.DanhGia r JOIN dbo.KhachHang k ON k.maKhachHang=r.maKhachHang ORDER BY r.thoiGianDanhGia DESC,r.maDanhGia DESC`)).recordset;
   const keyword=normalizeVietnamese(query.keyword||'');
   const filtered=keyword?rows.filter(x=>normalizeVietnamese(`${x.customerName} ${x.serviceName||''} ${x.rating} ${x.content}`).includes(keyword)):rows;
   return paginate(filtered,query.page,query.limit);
@@ -402,10 +401,8 @@ export async function listReviews(query={}) {
 export async function getReview(id) {
   const row=(await getPool().request().input('id',dbTypes.Char(10),id).query(`SELECT r.maDanhGia AS id,r.noiDung AS content,r.mucDanhGia AS rating,r.hinhAnh AS image,
     r.thoiGianDanhGia AS reviewedAt,k.maKhachHang AS customerId,k.hoTen AS customerName,k.soDienThoai AS customerPhone,
-    s.tenDV AS serviceName,performer.tenDangNhap AS staffName,d.maDonMua AS servicePackageId FROM dbo.DanhGia r
-    JOIN dbo.KhachHang k ON k.maKhachHang=r.maKhachHang LEFT JOIN dbo.DonMuaDV d ON d.maDonMua=r.maDonMua
-    LEFT JOIN dbo.DichVu s ON s.maDichVu=d.maDichVu LEFT JOIN LATERAL (SELECT a.tenDangNhap FROM dbo.CT_DonMua c
-      JOIN dbo.TaiKhoan a ON a.maTK=c.maTK WHERE c.maDonMua=d.maDonMua ORDER BY c.maCT_DonMua LIMIT 1) performer ON TRUE WHERE r.maDanhGia=@id`)).recordset[0];
+    NULL AS serviceName,NULL AS staffName,NULL AS servicePackageId FROM dbo.DanhGia r
+    JOIN dbo.KhachHang k ON k.maKhachHang=r.maKhachHang WHERE r.maDanhGia=@id`)).recordset[0];
   if(!row)throw notFound('Không tìm thấy đánh giá phù hợp!');
   return {...row,id:row.id.trim(),customerId:row.customerId.trim(),servicePackageId:row.servicePackageId?.trim()||null,rating:Number(row.rating)};
 }
@@ -426,15 +423,14 @@ export async function createReview(body,user=null) {
   if(errors.length)throw badRequest('Thông tin đánh giá chưa hợp lệ.',errors);
   return inTransaction(async transaction=>{
     await findCustomer(customerId,transaction);
-    const pkg=(await requestFor(transaction).input('id',dbTypes.Char(10),packageId).input('customer',dbTypes.Char(10),customerId).query(`SELECT maDonMua,trangThaiHoanThanh FROM dbo.DonMuaDV WITH (UPDLOCK,HOLDLOCK)
+    const pkg=(await requestFor(transaction).input('id',dbTypes.Char(10),packageId).input('customer',dbTypes.Char(10),customerId).query(`SELECT maDonMua AS "maDonMua",trangThaiHoanThanh AS "trangThaiHoanThanh" FROM dbo.DonMuaDV WITH (UPDLOCK,HOLDLOCK)
       WHERE maDonMua=@id AND maKhachHang=@customer`)).recordset[0];
     if(!pkg)throw notFound('Không tìm thấy liệu trình phù hợp!');
     if(pkg.trangThaiHoanThanh!=='Đã hoàn thành')throw error(409,'SERVICE_NOT_COMPLETED','Chỉ đánh giá được dịch vụ đã hoàn thành.');
     const id=await nextCode('DG',transaction);const date=new Date();
     await requestFor(transaction).input('id',dbTypes.Char(10),id).input('content',dbTypes.NVarChar(200),content).input('rating',dbTypes.Int,rating)
       .input('image',dbTypes.VarChar(255),image).input('date',dbTypes.DateTime2,date).input('customer',dbTypes.Char(10),customerId)
-      .input('package',dbTypes.Char(10),packageId).input('staff',dbTypes.Char(10),user?.id||null)
-      .query('INSERT INTO dbo.DanhGia(maDanhGia,noiDung,mucDanhGia,hinhAnh,thoiGianDanhGia,maKhachHang,maDonMua,maTK) VALUES(@id,@content,@rating,@image,@date,@customer,@package,@staff)');
+      .query('INSERT INTO dbo.DanhGia(maDanhGia,noiDung,mucDanhGia,hinhAnh,thoiGianDanhGia,maKhachHang) VALUES(@id,@content,@rating,@image,@date,@customer)');
     await insertAudit({transaction,user,action:'Ghi nhận đánh giá khách hàng',entity:'DanhGia',entityId:id,before:null,
       after:{maKhachHang:customerId,maDonMua:packageId,mucDanhGia:rating,noiDung:content,hinhAnh:image}});
     return {id:id.trim(),customerId:customerId.trim(),servicePackageId:packageId.trim(),rating,content,image,reviewedAt:date,message:'Ghi nhận đánh giá thành công'};
