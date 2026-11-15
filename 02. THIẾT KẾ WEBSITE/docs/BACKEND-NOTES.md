@@ -31,7 +31,7 @@ Swagger UI hiển thị toàn bộ API đã triển khai và cho phép thử cá
 | GET, PUT, DELETE | `/api/customers/:id` | OWNER, STAFF |
 | GET | `/api/customers/:id/service-history` | OWNER, STAFF |
 | POST | `/api/customers/:id/service-packages` | OWNER, STAFF |
-| GET | `/api/service-packages/:id` | OWNER, STAFF |
+| GET | `/api/service-packages/:packageId` | OWNER, STAFF |
 | POST | `/api/service-packages/:packageId/sessions/:sessionId/start` | OWNER, STAFF |
 | POST | `/api/service-packages/:packageId/sessions/:sessionId/complete` | OWNER, STAFF |
 | GET | `/api/retail-products` | OWNER, STAFF |

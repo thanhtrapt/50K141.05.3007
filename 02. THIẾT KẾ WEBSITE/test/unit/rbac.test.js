@@ -51,7 +51,7 @@ const STAFF_ALLOWED = [
   ['/api/customers/{id}/service-packages', 'POST'],
   ['/api/customers/{id}/retail-sales', 'POST'],
   ['/api/customers/{id}/cancellations', 'GET'],
-  ['/api/service-packages/{id}', 'GET'],
+  ['/api/service-packages/{packageId}', 'GET'],
   ['/api/service-packages/{packageId}/sessions/{sessionId}/start', 'POST'],
   ['/api/service-packages/{packageId}/sessions/{sessionId}/complete', 'POST'],
   ['/api/retail-products', 'GET'],

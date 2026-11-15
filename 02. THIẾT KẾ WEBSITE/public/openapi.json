@@ -337,7 +337,7 @@
         }
       }
     },
-    "/api/service-packages/{id}": {
+    "/api/service-packages/{packageId}": {
       "get": {
         "tags": [
           "Khách hàng và liệu trình"
@@ -345,7 +345,7 @@
         "summary": "Chi tiết liệu trình, buổi thực hiện và PDF đã lưu",
         "parameters": [
           {
-            "$ref": "#/components/parameters/Id"
+            "$ref": "#/components/parameters/PackageId"
           }
         ],
         "responses": {

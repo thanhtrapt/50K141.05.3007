@@ -30,7 +30,7 @@ Backend chạy dưới dạng Vercel Serverless Functions trong thư mục `api/
 | POST | `/api/customers/:id/service-packages` | OWNER, STAFF | `api/customers/[id]/service-packages.js` |
 | POST | `/api/customers/:id/retail-sales` | OWNER, STAFF | `api/customers/[id]/retail-sales.js` |
 | GET | `/api/customers/:id/cancellations` | OWNER, STAFF | `api/customers/[id]/cancellations.js` |
-| GET | `/api/service-packages/:id` | OWNER, STAFF | `api/service-packages/[id].js` |
+| GET | `/api/service-packages/:packageId` | OWNER, STAFF | `api/service-packages/[packageId].js` |
 | POST | `/api/service-packages/:packageId/sessions/:sessionId/start` | OWNER, STAFF | `api/service-packages/[packageId]/sessions/[sessionId]/start.js` |
 | POST | `/api/service-packages/:packageId/sessions/:sessionId/complete` | OWNER, STAFF | `…/complete.js` |
 | GET | `/api/retail-products` | OWNER, STAFF | `api/retail-products.js` |
