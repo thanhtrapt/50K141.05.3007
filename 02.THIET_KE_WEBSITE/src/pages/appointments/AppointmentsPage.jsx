@@ -42,9 +42,9 @@ function mondayOf(date) {
   return result;
 }
 
-function appointmentEndTime(services, serviceName, startTime) {
-  if (!serviceName || !startTime) return '';
-  const serviceIndex = services.findIndex((service) => service.name === serviceName);
+function appointmentEndTime(services, serviceId, startTime) {
+  if (!serviceId || !startTime) return '';
+  const serviceIndex = services.findIndex((service) => service.id === serviceId || service.name === serviceId);
   const duration = serviceIndex >= 0 ? Number(services[serviceIndex].durationMinutes) || 60 : 60;
   const [hours, minutes] = startTime.split(':').map(Number);
   const endMinutes = hours * 60 + minutes + duration;
@@ -133,6 +133,7 @@ export default function AppointmentsPage() {
         customer: appointment.customerName ?? '',
         phone: appointment.customerPhone ?? '',
         service: appointment.sessionName ?? '',
+        serviceId: appointment.serviceId ?? '',
         note: appointment.note ?? '',
         status: appointment.status,
         customerId: appointment.customerId,
@@ -196,7 +197,8 @@ export default function AppointmentsPage() {
     setAppointmentForm({
       customer: appointment.customer,
       phone: appointment.phone || '',
-      service: appointment.service,
+      service: appointment.serviceId || appointment.service,
+      customerStatus: 'existing',
       date: appointment.date,
       start: appointment.start,
       end: appointment.end,
@@ -238,7 +240,7 @@ export default function AppointmentsPage() {
         if (query.trim()) params.set('keyword', query.trim());
         const refreshed = await apiRequest(`/api/appointments?${params.toString()}`);
         setEvents((refreshed.data ?? []).map((appointment) => ({ id: appointment.id, date: appointment.date, start: appointment.startTime, end: appointment.endTime,
-          customer: appointment.customerName ?? '', phone: appointment.customerPhone ?? '', service: appointment.sessionName ?? '', note: appointment.note ?? '', status: appointment.status, tone: 'mint' })));
+          customer: appointment.customerName ?? '', phone: appointment.customerPhone ?? '', service: appointment.sessionName ?? '', serviceId: appointment.serviceId ?? '', note: appointment.note ?? '', status: appointment.status, tone: 'mint' })));
       } catch (error) {
         if (error.code === 'CUSTOMER_BLACKLISTED') setBusinessWarning(error.fieldErrors?.[0]?.message || 'Vui lòng cân nhắc trước khi lưu; bạn vẫn có thể tạo lịch hẹn.');
         else if (error.code === 'APPOINTMENT_CONFLICT' || error.code === 'SESSION_ALREADY_SCHEDULED') {
@@ -257,7 +259,8 @@ export default function AppointmentsPage() {
           customerPhone: phone,
           customerName: appointmentForm.customer.trim(),
           customerBirthday: appointmentForm.birthday,
-          serviceName: appointmentForm.service,
+          serviceId: appointmentForm.service,
+          serviceName: services.find((service) => service.id === appointmentForm.service)?.name ?? '',
           date: appointmentForm.date,
           startTime: appointmentForm.start,
           endTime: appointmentForm.end,
@@ -266,7 +269,8 @@ export default function AppointmentsPage() {
         setEvents((current) => [...current, {
           id: created.id, date: created.date, start: created.startTime, end: created.endTime,
           customer: created.customerName ?? appointmentForm.customer, phone: created.customerPhone ?? phone,
-          service: created.sessionName ?? appointmentForm.service, note: created.note ?? appointmentForm.note,
+          service: created.sessionName ?? services.find((service) => service.id === appointmentForm.service)?.name ?? '',
+          serviceId: created.serviceId ?? appointmentForm.service, note: created.note ?? appointmentForm.note,
           status: created.status, customerId: created.customerId, sessionId: created.sessionId, tone: 'mint',
         }].filter((item) => item.date >= fromDate && item.date <= toDate));
         showDialog({ tone: 'success', title: 'Tạo lịch hẹn thành công', message: 'Thông tin lịch hẹn đã được lưu vào hệ thống.', size: 'medium', wideButton: true });
@@ -274,7 +278,7 @@ export default function AppointmentsPage() {
         const params = new URLSearchParams({ startDate: fromDate, endDate: toDate, limit: '100' });
         const refreshed = await apiRequest(`/api/appointments?${params.toString()}`).catch((error) => { console.error('Không thể làm mới danh sách lịch hẹn:', error); return null; });
         if (refreshed) setEvents((refreshed.data ?? []).map((appointment) => ({ id: appointment.id, date: appointment.date, start: appointment.startTime, end: appointment.endTime,
-          customer: appointment.customerName ?? '', phone: appointment.customerPhone ?? '', service: appointment.sessionName ?? '', note: appointment.note ?? '', status: appointment.status, tone: 'mint' })));
+          customer: appointment.customerName ?? '', phone: appointment.customerPhone ?? '', service: appointment.sessionName ?? '', serviceId: appointment.serviceId ?? '', note: appointment.note ?? '', status: appointment.status, tone: 'mint' })));
       } catch (error) {
         if (error.code === 'CUSTOMER_BLACKLISTED') setBusinessWarning(error.fieldErrors?.[0]?.message || 'Vui lòng cân nhắc trước khi lưu; bạn vẫn có thể tạo lịch hẹn.');
         else if (error.code === 'APPOINTMENT_CONFLICT' || error.code === 'SESSION_ALREADY_SCHEDULED') {
@@ -419,7 +423,7 @@ export default function AppointmentsPage() {
             {appointmentForm.customerStatus === 'existing' && <p className="form-grid__wide" role="status">Khách cũ</p>}
             {customerLookup === 'loading' && <p className="form-grid__wide" role="status">Đang kiểm tra số điện thoại...</p>}
           </>}
-          <SelectField label="Dịch vụ *" value={appointmentForm.service} onChange={(event) => { setAppointmentForm((current) => ({ ...current, service: event.target.value, end: appointmentEndTime(services, event.target.value, current.start) })); setAppointmentValidation((current) => current ? { ...current, service: '', summary: '' } : current); }} options={[{ value: '', label: services.length ? 'Chọn dịch vụ' : 'Chưa có dịch vụ' }, ...services.map((service) => service.name)]} disabled={Boolean(editingId) || services.length === 0} error={appointmentValidation?.service} required />
+          <SelectField label="Dịch vụ *" value={appointmentForm.service} onChange={(event) => { setAppointmentForm((current) => ({ ...current, service: event.target.value, end: appointmentEndTime(services, event.target.value, current.start) })); setAppointmentValidation((current) => current ? { ...current, service: '', summary: '' } : current); }} options={[{ value: '', label: services.length ? 'Chọn dịch vụ' : 'Chưa có dịch vụ' }, ...services.map((service) => ({ value: service.id, label: service.name }))]} disabled={Boolean(editingId) || services.length === 0} error={appointmentValidation?.service} required />
           {servicesError && <p className="field__error form-grid__wide" role="alert">{servicesError}</p>}
           <TextField label="Ngày hẹn *" type="date" value={appointmentForm.date} onChange={(event) => setAppointmentForm({ ...appointmentForm, date: event.target.value })} required />
           <TextField label="Giờ hẹn *" type="time" value={appointmentForm.start} onChange={(event) => setAppointmentForm((current) => ({ ...current, start: event.target.value, end: appointmentEndTime(services, current.service, event.target.value) }))} required />

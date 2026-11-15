@@ -15,7 +15,8 @@ function toInputDate(value = '') {
 }
 
 function toDisplayDate(value = '') {
-  const parts = value.split('-');
+  const dateValue = value instanceof Date ? value.toISOString().slice(0, 10) : String(value);
+  const parts = dateValue.slice(0, 10).split('-');
   return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : value;
 }
 
@@ -33,13 +34,26 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave, onA
     setPurchases(draftPurchases ?? record?.purchases ?? []);
   }, [record?.id, draft?.name, draft?.birthday, draft?.phone, draftPurchases]);
 
+  const readOnlyPurchases = record
+    ? (record.purchasedProducts ?? record.purchasedSales?.flatMap((sale) => (sale.items ?? []).map((item) => ({ ...item, purchaseDate: sale.purchaseDate }))) ?? []).map((item, index) => ({
+      id: item.id ?? item.lineId ?? `${item.saleId ?? 'sale'}-${index}`,
+      date: toDisplayDate(item.purchaseDate),
+      product: item.cosmeticName ?? item.product ?? '—',
+      quantity: item.quantity ?? '—',
+      price: formatCurrency(item.unitPrice ?? item.price ?? 0),
+      total: formatCurrency(item.lineTotal ?? item.total ?? 0),
+    }))
+    : purchases;
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!form.name.trim() || !form.birthday || !form.phone) { setFormError('Vui lòng nhập đầy đủ thông tin khách hàng.'); return; }
     if (!/^\d{10}$/.test(form.phone)) { setFormError('Số điện thoại gồm 10 chữ số.'); return; }
     setFormError('');
     try {
-      await onSave({ ...form, birthday: toDisplayDate(form.birthday), purchases });
+      const payload = { ...form, birthday: toDisplayDate(form.birthday) };
+      if (!record) payload.purchases = purchases;
+      await onSave(payload);
     } catch (error) {
       console.error('[customers] Không thể lưu hồ sơ khách hàng:', error);
       showDialog({ message: record ? 'Không thể cập nhật hồ sơ khách hàng. Vui lòng thử lại sau!' : 'Không thể tạo hồ sơ khách hàng. Vui lòng thử lại sau!' });
@@ -67,20 +81,43 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave, onA
           </div>
         </section>
 
-        <div className="customer-form__service-grid">
-          <section className="panel customer-form__section">
-            <h2>Dịch vụ đang sử dụng</h2>
-            <p>Chưa có dịch vụ đang sử dụng</p>
-          </section>
-          <section className="panel customer-form__section">
-            <h2>Dịch vụ phát sinh</h2>
-            <p>Chưa có dịch vụ phát sinh</p>
-          </section>
-        </div>
+        {record ? (
+          <div className="customer-form__service-grid">
+            <section className="panel customer-form__section customer-form__readonly-history" aria-readonly="true">
+              <h2>Dịch vụ đang sử dụng <span>(chỉ xem)</span></h2>
+              {(record.activeServices ?? []).length ? record.activeServices.map((service) => (
+                <p key={service.id}>
+                  <strong>{service.serviceName}</strong>
+                  <span>{formatCurrency(service.purchasePrice)} · {service.sessionsCompleted}/{service.totalSessions} buổi · {service.completionStatus}</span>
+                </p>
+              )) : <p>Chưa có dịch vụ đang sử dụng</p>}
+            </section>
+            <section className="panel customer-form__section customer-form__readonly-history" aria-readonly="true">
+              <h2>Lịch sử dịch vụ <span>(chỉ xem)</span></h2>
+              {(record.serviceHistory ?? []).length ? record.serviceHistory.map((service) => (
+                <p key={service.id}>
+                  <strong>{service.serviceName}</strong>
+                  <span>{formatCurrency(service.purchasePrice)} · {service.sessionsCompleted}/{service.totalSessions} buổi · {service.completionStatus}</span>
+                </p>
+              )) : <p>Chưa có lịch sử dịch vụ</p>}
+            </section>
+          </div>
+        ) : (
+          <div className="customer-form__service-grid">
+            <section className="panel customer-form__section">
+              <h2>Dịch vụ đang sử dụng</h2>
+              <p>Chưa có dịch vụ đang sử dụng</p>
+            </section>
+            <section className="panel customer-form__section">
+              <h2>Dịch vụ phát sinh</h2>
+              <p>Chưa có dịch vụ phát sinh</p>
+            </section>
+          </div>
+        )}
 
         <section className="panel customer-form__section customer-form__purchases">
           <div className="customer-form__section-heading">
-            <h2>Sản phẩm mua thêm</h2>
+            <h2>Sản phẩm mua thêm{record && <span> (chỉ xem)</span>}</h2>
             {onAddPurchases && <Button type="button" variant="secondary" onClick={() => onAddPurchases(form, purchases)}>+ Ghi nhận mua thêm</Button>}
           </div>
           <DataTable
@@ -91,7 +128,7 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave, onA
               { key: 'price', label: 'Giá', width: '17%', align: 'right', nowrap: true },
               { key: 'total', label: 'Thành tiền', width: '17%', align: 'right', nowrap: true },
             ]}
-            rows={purchases}
+            rows={readOnlyPurchases}
             rowKey="id"
             emptyMessage="Chưa có sản phẩm mua thêm"
           />

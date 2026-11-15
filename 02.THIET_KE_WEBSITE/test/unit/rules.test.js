@@ -56,5 +56,5 @@ test('BR-3.2-01: lịch hẹn yêu cầu ngày và giờ hợp lệ; availabilit
   assert.throws(()=>validateDateAndTime({date:'2026-11-14',startTime:'25:90'}),error=>error.fieldErrors.some(x=>x.field==='startTime'));
   await assert.rejects(getAvailability({date:'2026-02-31',durationMinutes:30}),errorCode('VALIDATION_ERROR'));
   await assert.rejects(getAvailability({date:'2026-11-14',durationMinutes:0}),errorCode('VALIDATION_ERROR'));
-  await assert.rejects(createAppointment({date:'2026-11-14',startTime:'10:00'},{id:'TK00000001'}),error=>error.fieldErrors.some(x=>x.field==='customerId'));
+  await assert.rejects(createAppointment({date:'2026-11-14',startTime:'10:00'},{id:'TK00000001'}),error=>error.fieldErrors.some(x=>x.field==='customerPhone'));
 });

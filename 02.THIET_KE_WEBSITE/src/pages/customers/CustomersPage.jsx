@@ -35,7 +35,9 @@ export default function CustomersPage({ recordsOnly = false }) {
   const editingId = routeParts.length === 2 && routeParts[1] === 'chinh-sua' ? routeParts[0] : null;
   const customerId = !isCreate && routeParts[0] !== 'undefined' ? routeParts[0] : null;
   const recordRow = items.find((customer) => customer.id === editingId);
-  const record = recordRow ? { ...recordRow, birthday: recordRow.dateOfBirth?.split('-').reverse().join('/') ?? '' } : null;
+  const recordSnapshot = routeState?.customerSnapshot?.id === editingId ? routeState.customerSnapshot : null;
+  const recordSource = selectedDetail?.id === editingId ? selectedDetail : recordSnapshot ?? recordRow;
+  const record = recordSource ? { ...recordSource, birthday: recordSource.dateOfBirth?.split('-').reverse().join('/') ?? recordSource.birthday ?? '' } : null;
   const selected = customerId ? selectedDetail ?? items.find((customer) => customer.id === customerId) : null;
   const nextId = 'Tự động tạo';
 
@@ -67,7 +69,7 @@ export default function CustomersPage({ recordsOnly = false }) {
   const pageItems = filtered.slice((page - 1) * 9, page * 9);
   const openCreate = () => navigate(`${basePath}/tao-moi`);
   const openDetail = (customer) => navigate(`${basePath}/${customer.id}`);
-  const openEdit = (customer) => navigate(`${basePath}/${customer.id}/chinh-sua`);
+  const openEdit = (customer) => navigate(`${basePath}/${customer.id}/chinh-sua`, { state: { customerSnapshot: customer } });
   const openRetailSale = (customerId, customerDraft, draftPurchases = []) => navigate(
     `${basePath}/${customerId}/ghi-nhan-mua-them`,
     { state: { customerDraft, draftPurchases, returnPath: `${basePath}/${customerId}` } },
@@ -86,7 +88,8 @@ export default function CustomersPage({ recordsOnly = false }) {
       ? await apiRequest(`/api/customers/${encodeURIComponent(editingId)}`, { method: 'PUT', body })
       : await apiRequest('/api/customers', { method: 'POST', body });
     const saleGroups = new Map();
-    for (const purchase of form.purchases ?? []) {
+    const purchasesToCreate = editingId ? [] : (form.purchases ?? []);
+    for (const purchase of purchasesToCreate) {
       if (!purchase.productId || !purchase.quantityValue || !purchase.saleDate) continue;
       const group = saleGroups.get(purchase.saleDate) ?? [];
       group.push({ cosmeticId: purchase.productId, quantity: purchase.quantityValue });

@@ -53,6 +53,28 @@
   color: var(--color-muted);
 }
 
+.customer-form__readonly-history h2 span,
+.customer-form__purchases h2 span {
+  color: var(--color-muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.customer-form__readonly-history > p {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  color: #684a35;
+  background: #fbf3e3;
+  border-radius: 8px;
+}
+
+.customer-form__readonly-history > p > span {
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
 .customer-form__section-heading,
 .customer-detail__section-heading,
 .service-form__section-heading,
