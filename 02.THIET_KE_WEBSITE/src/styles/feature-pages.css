@@ -506,14 +506,15 @@
 .outbound-detail-panel__facts {
   display: grid;
   max-width: 680px;
-  grid-template-columns: minmax(150px, 0.45fr) minmax(0, 1fr);
-  gap: 14px 24px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
   margin: 0 0 12px;
 }
 
 .outbound-detail-panel__facts > div {
   display: grid;
-  grid-template-columns: minmax(150px, 0.65fr) minmax(0, 1fr);
+  grid-template-columns: 180px minmax(0, 1fr);
+  align-items: start;
   gap: 12px;
 }
 
@@ -523,7 +524,13 @@
 
 .outbound-detail-panel__facts dd {
   margin: 0;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .outbound-detail-panel__facts > div {
+    grid-template-columns: minmax(110px, 150px) max-content;
+  }
 }
 
 .outbound-detail-panel__table-title {

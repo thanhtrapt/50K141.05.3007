@@ -153,11 +153,21 @@ export default function AppointmentsPage() {
   useEffect(() => {
     let active = true;
     apiRequest('/api/services?limit=100').then(async (result) => {
-      const detailed = await Promise.all((result.data ?? []).map(async (service) => {
-        const item = await apiRequest(`/api/services/${service.id}`);
-        return { ...service, durationMinutes: Number(item.sessions?.[0]?.durationMinutes) || 60 };
+      const rows = Array.isArray(result?.data) ? result.data : Array.isArray(result) ? result : [];
+      if (active) {
+        setServices(rows.map((service) => ({ ...service, durationMinutes: 60 })));
+        setServicesError('');
+      }
+      const detailed = await Promise.all(rows.map(async (service) => {
+        try {
+          const item = await apiRequest(`/api/services/${encodeURIComponent(service.id)}`);
+          return { ...service, durationMinutes: Number(item.sessions?.[0]?.durationMinutes) || 60 };
+        } catch (error) {
+          console.error(`[appointments] Không tải được thời lượng dịch vụ ${service.id}:`, error);
+          return { ...service, durationMinutes: 60 };
+        }
       }));
-      if (active) { setServices(detailed); setServicesError(''); }
+      if (active) setServices(detailed);
     }).catch((error) => { if (active) { setServices([]); setServicesError(error.isServerError || error.code === 'NETWORK_ERROR' ? '' : error.message); } });
     return () => { active = false; };
   }, []);
@@ -354,7 +364,7 @@ export default function AppointmentsPage() {
       </section>
 
       <FeedbackDialog open={notFoundOpen} tone="empty" message="Không tìm thấy lịch hẹn phù hợp!" onClose={() => setNotFoundOpen(false)} />
-      <FeedbackDialog open={Boolean(appointmentConflict)} title="Giờ hẹn bị trùng lịch với lịch khác" message={appointmentConflict?.message} closeVariant="secondary" onClose={() => setAppointmentConflict(null)}>
+      <FeedbackDialog open={Boolean(appointmentConflict)} title="Giờ hẹn bị trùng lịch với lịch khác" message={appointmentConflict?.message} closeVariant="secondary" layer={2} onClose={() => setAppointmentConflict(null)}>
         {appointmentConflict?.suggestions?.length > 0 && <div className="appointment-conflict-slots"><strong>Giờ trống</strong>{appointmentConflict.suggestions.map((slot) => <button type="button" key={`${slot.startTime}-${slot.endTime}`} onClick={() => { setAppointmentForm((current) => ({ ...current, start: slot.startTime, end: slot.endTime })); setAppointmentConflict(null); }}>{slot.startTime} – {slot.endTime}</button>)}</div>}
       </FeedbackDialog>
 
