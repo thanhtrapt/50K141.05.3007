@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { Pencil } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import Button from '../../components/ui/Button.jsx';
 import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
 import { useFeedback } from '../../components/ui/FeedbackContext.jsx';
@@ -20,8 +22,9 @@ function toDisplayDate(value = '') {
   return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : value;
 }
 
-export default function CustomerFormPage({ record, nextId, onCancel, onSave, onAddPurchases, draft, draftPurchases }) {
+export default function CustomerFormPage({ record, nextId, onCancel, onSave, onAddPurchases, serviceUsagePath, returnPath, draft, draftPurchases }) {
   const [form, setForm] = useState(emptyCustomer);
+  const [serviceDrafts, setServiceDrafts] = useState({});
   const [purchases, setPurchases] = useState([]);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [formError, setFormError] = useState('');
@@ -29,8 +32,13 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave, onA
 
   useEffect(() => {
     setForm(record
-      ? { name: record.name, birthday: toInputDate(record.birthday), phone: record.phone }
+      ? { name: record.name, birthday: toInputDate(record.birthday), phone: record.phone, cancellationCount: String(record.cancellationCount ?? 0) }
       : { ...emptyCustomer, ...(draft ?? {}) });
+    setServiceDrafts(Object.fromEntries([...(record?.additionalServices ?? [])].map((service) => [service.id, {
+      paymentStatus: service.paymentStatus ?? 'Chưa thanh toán',
+      note: service.note ?? '',
+      summaryFile: service.summaryFile ?? '',
+    }])));
     setPurchases(draftPurchases ?? record?.purchases ?? []);
   }, [record?.id, draft?.name, draft?.birthday, draft?.phone, draftPurchases]);
 
@@ -49,9 +57,23 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave, onA
     event.preventDefault();
     if (!form.name.trim() || !form.birthday || !form.phone) { setFormError('Vui lòng nhập đầy đủ thông tin khách hàng.'); return; }
     if (!/^\d{10}$/.test(form.phone)) { setFormError('Số điện thoại gồm 10 chữ số.'); return; }
+    if (record && (!/^\d+$/.test(String(form.cancellationCount)) || Number(form.cancellationCount) < 0 || !Number.isSafeInteger(Number(form.cancellationCount)))) { setFormError('Số lần hủy lịch phải là số nguyên không âm.'); return; }
     setFormError('');
     try {
       const payload = { ...form, birthday: toDisplayDate(form.birthday) };
+      if (record) {
+        payload.cancellationCount = Number(form.cancellationCount);
+        payload.serviceUpdates = [...(record.additionalServices ?? [])].flatMap((service) => {
+          const values = serviceDrafts[service.id];
+          if (!values) return [];
+          const update = { id: service.id };
+          for (const field of ['paymentStatus', 'note', 'summaryFile']) {
+            const current = service[field] ?? '';
+            if (values[field] !== current) update[field] = values[field] || null;
+          }
+          return Object.keys(update).length > 1 ? [update] : [];
+        });
+      }
       if (!record) payload.purchases = purchases;
       await onSave(payload);
     } catch (error) {
@@ -77,29 +99,33 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave, onA
             <TextField label="Họ và tên *" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Nhập họ và tên" required />
             <TextField label="Ngày sinh *" type="date" value={form.birthday} onChange={(event) => setForm({ ...form, birthday: event.target.value })} required />
             <TextField label="Số điện thoại *" type="tel" inputMode="numeric" pattern="[0-9]{10}" title="Số điện thoại gồm 10 chữ số" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} placeholder="Nhập số điện thoại gồm 10 chữ số" required />
-            {record && <TextField label="Số lần hủy lịch" value={record.cancellationCount ?? ''} readOnly />}
+            {record && <TextField label="Số lần hủy lịch" type="number" min="0" step="1" value={form.cancellationCount ?? ''} onChange={(event) => setForm({ ...form, cancellationCount: event.target.value })} />}
           </div>
         </section>
 
         {record ? (
           <div className="customer-form__service-grid">
-            <section className="panel customer-form__section customer-form__readonly-history" aria-readonly="true">
-              <h2>Dịch vụ đang sử dụng <span>(chỉ xem)</span></h2>
+            <section className="panel customer-form__section customer-form__readonly-history">
+              <h2>Dịch vụ đang sử dụng</h2>
               {(record.activeServices ?? []).length ? record.activeServices.map((service) => (
                 <p key={service.id}>
                   <strong>{service.serviceName}</strong>
                   <span>{formatCurrency(service.purchasePrice)} · {service.sessionsCompleted}/{service.totalSessions} buổi · {service.completionStatus}</span>
+                  {serviceUsagePath && <Link className="btn-action btn-action--edit" to={`${serviceUsagePath}?packageId=${encodeURIComponent(service.id)}`} state={{ returnPath }} aria-label={`Chỉnh sửa dịch vụ ${service.serviceName}`} style={{ width: 'fit-content', height: 30, minHeight: 30, padding: '0 9px', fontSize: 12 }}><Pencil className="btn-action__icon" size={13} /><span>Chỉnh sửa</span></Link>}
                 </p>
               )) : <p>Chưa có dịch vụ đang sử dụng</p>}
             </section>
-            <section className="panel customer-form__section customer-form__readonly-history" aria-readonly="true">
-              <h2>Lịch sử dịch vụ <span>(chỉ xem)</span></h2>
-              {(record.serviceHistory ?? []).length ? record.serviceHistory.map((service) => (
+            <section className="panel customer-form__section customer-form__readonly-history">
+              <h2>Dịch vụ phát sinh</h2>
+              {(record.additionalServices ?? []).length ? record.additionalServices.map((service) => (
                 <p key={service.id}>
-                  <strong>{service.serviceName}</strong>
+                  {serviceUsagePath ? <Link to={`${serviceUsagePath}?packageId=${encodeURIComponent(service.id)}`} state={{ returnPath }} style={{ color: 'inherit', textDecoration: 'none', fontWeight: 700 }}>{service.serviceName}</Link> : <strong>{service.serviceName}</strong>}
                   <span>{formatCurrency(service.purchasePrice)} · {service.sessionsCompleted}/{service.totalSessions} buổi · {service.completionStatus}</span>
+                  <label className="field"><span className="field__label">Trạng thái thanh toán</span><select className="field__control field__select" value={serviceDrafts[service.id]?.paymentStatus ?? service.paymentStatus ?? 'Chưa thanh toán'} onChange={(event) => setServiceDrafts((current) => ({ ...current, [service.id]: { ...current[service.id], paymentStatus: event.target.value } }))}><option>Chưa thanh toán</option><option>Đã thanh toán</option></select></label>
+                  <label className="field"><span className="field__label">Ghi chú</span><textarea className="field__control" maxLength={255} value={serviceDrafts[service.id]?.note ?? ''} onChange={(event) => setServiceDrafts((current) => ({ ...current, [service.id]: { ...current[service.id], note: event.target.value } }))} /></label>
+                  <label className="field"><span className="field__label">Tệp tổng hợp</span><input className="field__control" value={serviceDrafts[service.id]?.summaryFile ?? ''} maxLength={255} onChange={(event) => setServiceDrafts((current) => ({ ...current, [service.id]: { ...current[service.id], summaryFile: event.target.value } }))} /></label>
                 </p>
-              )) : <p>Chưa có lịch sử dịch vụ</p>}
+              )) : <p>Chưa có dịch vụ phát sinh</p>}
             </section>
           </div>
         ) : (
@@ -117,7 +143,7 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave, onA
 
         <section className="panel customer-form__section customer-form__purchases">
           <div className="customer-form__section-heading">
-            <h2>Sản phẩm mua thêm{record && <span> (chỉ xem)</span>}</h2>
+            <h2>Sản phẩm mua thêm</h2>
             {onAddPurchases && <Button type="button" variant="secondary" onClick={() => onAddPurchases(form, purchases)}>+ Ghi nhận mua thêm</Button>}
           </div>
           <DataTable
@@ -137,8 +163,9 @@ export default function CustomerFormPage({ record, nextId, onCancel, onSave, onA
         <section className="panel customer-form__section customer-form__history">
           <div className="customer-form__section-heading">
             <h2>Lịch sử dịch vụ</h2>
-            <span className="muted-copy">Chưa có lịch sử dịch vụ</span>
+            <span className="muted-copy">{record?.serviceHistory?.length ? `${record.serviceHistory.length} liệu trình đã hoàn thành` : 'Chưa có lịch sử dịch vụ'}</span>
           </div>
+          {record?.serviceHistory?.map((service) => <p key={service.id}>{service.serviceName} · {service.sessionsCompleted}/{service.totalSessions} buổi · {service.completionStatus}</p>)}
         </section>
 
         <div className="form-actions customer-form__actions">

@@ -20,6 +20,7 @@ export function customerFields(body,{partial=false}={}) {
   const name=body.name??body.hoTen;
   const dob=body.dateOfBirth??body.ngaySinh;
   const phone=body.phone??body.soDienThoai;
+  const cancellationCount=body.cancellationCount??body.soLanHuyLich;
   if(!partial||name!==undefined) {
     const value=String(name??'').trim();
     if(!value)errors.push({field:'name',message:'Họ và tên không được bỏ trống'});
@@ -38,6 +39,11 @@ export function customerFields(body,{partial=false}={}) {
     if(!value)errors.push({field:'phone',message:'Số điện thoại không được bỏ trống'});
     else if(!phonePattern.test(value))errors.push({field:'phone',message:phoneMessage});
     else result.soDienThoai=value;
+  }
+  if(partial&&cancellationCount!==undefined) {
+    const value=String(cancellationCount).trim();
+    if(!/^\d+$/.test(value)||!Number.isSafeInteger(Number(value)))errors.push({field:'cancellationCount',message:'Số lần hủy lịch phải là số nguyên không âm'});
+    else result.soLanHuyLich=Number(value);
   }
   if(errors.length)throw error(400,'VALIDATION_ERROR','Thông tin khách hàng chưa hợp lệ.',errors);
   return result;
@@ -102,11 +108,20 @@ export async function getCustomer(id) {
   }
   const sales=[...grouped.values()];
   const productRows=sales.flatMap(sale=>sale.items.map(item=>({...item,saleId:sale.saleId,purchaseDate:sale.purchaseDate})));
+  const { activeServices, additionalServices, serviceHistory } = partitionCustomerServicePackages(packages);
   return {...customer,isBlacklisted:customer.cancellationCount>=threshold,blacklistThreshold:threshold,
-    activeServices:packages.filter(item=>item.completionStatus!=='Đã hoàn thành'),serviceHistory:packages.filter(item=>item.completionStatus==='Đã hoàn thành'),
+    activeServices,additionalServices,serviceHistory,
     purchasedProducts:productRows,purchasedSales:sales,
-    emptyLabels:{additionalServices:packages.length?null:'Chưa có dịch vụ phát sinh',purchasedProducts:sales.length?null:'Chưa có sản phẩm mua thêm',serviceHistory:packages.some(item=>item.completionStatus==='Đã hoàn thành')?null:'Chưa có lịch sử dịch vụ'},
+    emptyLabels:{additionalServices:additionalServices.length?null:'Chưa có dịch vụ phát sinh',purchasedProducts:sales.length?null:'Chưa có sản phẩm mua thêm',serviceHistory:serviceHistory.length?null:'Chưa có lịch sử dịch vụ'},
     actions:{recordRetailSale:true,viewServiceHistory:true}};
+}
+
+export function partitionCustomerServicePackages(packages=[]) {
+  return {
+    activeServices:packages.filter(item=>item.completionStatus==='Đang thực hiện'),
+    additionalServices:packages.filter(item=>item.completionStatus==='Chưa thực hiện'),
+    serviceHistory:packages.filter(item=>item.completionStatus==='Đã hoàn thành'),
+  };
 }
 
 async function ensureUniquePhone(phone,excludeId,transaction) {
@@ -130,18 +145,71 @@ export async function createCustomer(body,user) {
 }
 
 export async function updateCustomer(id,body,user) {
+  const allowed=new Set(['name','hoTen','dateOfBirth','ngaySinh','phone','soDienThoai','cancellationCount','soLanHuyLich','serviceUpdates']);
+  const forbidden=Object.keys(body??{}).filter(field=>!allowed.has(field));
+  if(forbidden.length)throw badRequest('Không được phép cập nhật dữ liệu lịch sử hoặc giao dịch đã ghi nhận.',forbidden.map(field=>({field,message:'Trường này không được phép chỉnh sửa.'})));
   const fields=customerFields(body,{partial:true});
-  if(!Object.keys(fields).length)throw badRequest('Thông tin khách hàng chưa hợp lệ.');
+  const rawServiceUpdates=body?.serviceUpdates??[];
+  const serviceErrors=[];
+  if(!Array.isArray(rawServiceUpdates))serviceErrors.push({field:'serviceUpdates',message:'Danh sách dịch vụ cập nhật không hợp lệ.'});
+  const updatesById=new Set();
+  const serviceUpdates=(Array.isArray(rawServiceUpdates)?rawServiceUpdates:[]).map((item,index)=>{
+    if(!item||typeof item!=='object'||Array.isArray(item)){serviceErrors.push({field:`serviceUpdates.${index}`,message:'Thông tin dịch vụ cập nhật không hợp lệ.'});return null;}
+    const permitted=new Set(['id','paymentStatus','note','summaryFile']);
+    for(const field of Object.keys(item))if(!permitted.has(field))serviceErrors.push({field:`serviceUpdates.${index}.${field}`,message:'Trường này không được phép chỉnh sửa.'});
+    const packageId=String(item.id??'').trim();
+    if(!packageId)serviceErrors.push({field:`serviceUpdates.${index}.id`,message:'Thiếu mã dịch vụ cần cập nhật.'});
+    if(updatesById.has(packageId))serviceErrors.push({field:`serviceUpdates.${index}.id`,message:'Không được gửi trùng dịch vụ.'});
+    updatesById.add(packageId);
+    const update={id:packageId};
+    if(Object.hasOwn(item,'paymentStatus')){
+      const value=String(item.paymentStatus??'').trim();
+      if(!['Chưa thanh toán','Đã thanh toán'].includes(value))serviceErrors.push({field:`serviceUpdates.${index}.paymentStatus`,message:'Trạng thái thanh toán không hợp lệ.'});
+      else update.paymentStatus=value;
+    }
+    if(Object.hasOwn(item,'note')){
+      const value=item.note==null?null:String(item.note);
+      if(value!=null&&value.length>255)serviceErrors.push({field:`serviceUpdates.${index}.note`,message:'Ghi chú tối đa 255 ký tự.'});
+      else update.note=value;
+    }
+    if(Object.hasOwn(item,'summaryFile')){
+      const value=item.summaryFile==null?null:String(item.summaryFile).trim();
+      if(value!=null&&value.length>255)serviceErrors.push({field:`serviceUpdates.${index}.summaryFile`,message:'Tệp tổng hợp tối đa 255 ký tự.'});
+      else update.summaryFile=value||null;
+    }
+    if(Object.keys(update).length===1)serviceErrors.push({field:`serviceUpdates.${index}`,message:'Chọn ít nhất một thông tin dịch vụ cần cập nhật.'});
+    return update;
+  }).filter(Boolean);
+  if(serviceErrors.length)throw badRequest('Thông tin dịch vụ cập nhật chưa hợp lệ.',serviceErrors);
+  if(!Object.keys(fields).length&&!serviceUpdates.length)throw badRequest('Thông tin khách hàng chưa hợp lệ.');
   return inTransaction(async transaction=>{
     const before=await findCustomer(id,transaction);
     if(fields.soDienThoai)await ensureUniquePhone(fields.soDienThoai,id,transaction);
-    const set=[];const request=requestFor(transaction).input('id',dbTypes.Char(10),id);
-    if(fields.hoTen!==undefined){set.push('hoTen=@name');request.input('name',dbTypes.NVarChar(50),fields.hoTen);}
-    if(fields.ngaySinh!==undefined){set.push('ngaySinh=@dob');request.input('dob',dbTypes.Date,fields.ngaySinh);}
-    if(fields.soDienThoai!==undefined){set.push('soDienThoai=@phone');request.input('phone',dbTypes.VarChar(10),fields.soDienThoai);}
-    await request.query(`UPDATE dbo.KhachHang SET ${set.join(',')} WHERE maKhachHang=@id`);
+    if(Object.keys(fields).length){
+      const set=[];const request=requestFor(transaction).input('id',dbTypes.Char(10),id);
+      if(fields.hoTen!==undefined){set.push('hoTen=@name');request.input('name',dbTypes.NVarChar(50),fields.hoTen);}
+      if(fields.ngaySinh!==undefined){set.push('ngaySinh=@dob');request.input('dob',dbTypes.Date,fields.ngaySinh);}
+      if(fields.soDienThoai!==undefined){set.push('soDienThoai=@phone');request.input('phone',dbTypes.VarChar(10),fields.soDienThoai);}
+      if(fields.soLanHuyLich!==undefined){set.push('soLanHuyLich=@cancellationCount');request.input('cancellationCount',dbTypes.Int,fields.soLanHuyLich);}
+      await request.query(`UPDATE dbo.KhachHang SET ${set.join(',')} WHERE maKhachHang=@id`);
+    }
+    for(const update of serviceUpdates){
+      const current=(await requestFor(transaction).input('package',dbTypes.Char(10),update.id).input('customer',dbTypes.Char(10),id)
+        .query(`SELECT maDonMua AS id,trangThaiHoanThanh AS completionStatus,trangThaiThanhToan AS paymentStatus,ghiChu AS note,fileTongHop AS summaryFile
+          FROM dbo.DonMuaDV WITH (UPDLOCK,HOLDLOCK) WHERE maDonMua=@package AND maKhachHang=@customer`)).recordset[0];
+      if(!current)throw notFound('Không tìm thấy dịch vụ thuộc hồ sơ khách hàng này.');
+      if(current.completionStatus==='Đã hoàn thành')throw error(409,'SERVICE_HISTORY_READ_ONLY','Không thể chỉnh sửa dịch vụ đã hoàn thành.');
+      const set=[];const request=requestFor(transaction).input('package',dbTypes.Char(10),update.id);
+      if(update.paymentStatus!==undefined){set.push('trangThaiThanhToan=@payment');request.input('payment',dbTypes.NVarChar(50),update.paymentStatus);}
+      if(update.note!==undefined){set.push('ghiChu=@note');request.input('note',dbTypes.NVarChar(255),update.note);}
+      if(update.summaryFile!==undefined){set.push('fileTongHop=@summaryFile');request.input('summaryFile',dbTypes.NVarChar(255),update.summaryFile);}
+      const after=(await request.query(`UPDATE dbo.DonMuaDV SET ${set.join(',')} WHERE maDonMua=@package
+        RETURNING maDonMua AS id,trangThaiThanhToan AS paymentStatus,ghiChu AS note,fileTongHop AS summaryFile`)).recordset[0];
+      if(!after)throw notFound('Không tìm thấy dịch vụ cần cập nhật.');
+      await insertAudit({transaction,user,action:'Cập nhật dịch vụ trong hồ sơ khách hàng',entity:'DonMuaDV',entityId:update.id,before:current,after});
+    }
     const after=await findCustomer(id,transaction);
-    await insertAudit({transaction,user,action:'Cập nhật thông tin khách hàng',entity:'KhachHang',entityId:id,before,after});
+    if(Object.keys(fields).length)await insertAudit({transaction,user,action:'Cập nhật thông tin khách hàng',entity:'KhachHang',entityId:id,before,after});
     return {...after,message:'Cập nhật thông tin khách hàng thành công'};
   });
 }
@@ -228,6 +296,9 @@ export async function updateServicePackageDetails(id, body, user) {
   if (errors.length) throw error(400, 'VALIDATION_ERROR', 'Thông tin liệu trình chưa hợp lệ.', errors);
 
   return inTransaction(async transaction => {
+    const current=(await requestFor(transaction).input('id',dbTypes.Char(10),id).query(`SELECT trangThaiHoanThanh AS status FROM dbo.DonMuaDV WITH (UPDLOCK,HOLDLOCK) WHERE maDonMua=@id`)).recordset[0];
+    if(!current)throw notFound('Không tìm thấy liệu trình phù hợp!');
+    if(current.status==='Đã hoàn thành')throw error(409,'SERVICE_HISTORY_READ_ONLY','Không thể chỉnh sửa dịch vụ đã hoàn thành.');
     const request=requestFor(transaction).input('id',dbTypes.Char(10),id);
     const updates=[];
     if(paymentStatus!==undefined){request.input('payment',dbTypes.NVarChar(50),paymentStatus);updates.push('trangThaiThanhToan=@payment');}
@@ -342,6 +413,7 @@ export async function updatePackageSessionResult(packageId,sessionId,body,user) 
   if(errors.length)throw badRequest('Thông tin buổi dịch vụ chưa hợp lệ.',errors);
   return inTransaction(async transaction=>{
     const row=await packageAndSession(transaction,packageId,sessionId);
+    if(row.trangThaiHoanThanh==='Đã hoàn thành'||row.trangThaiThucHien==='Đã hoàn thành')throw error(409,'SERVICE_HISTORY_READ_ONLY','Không thể chỉnh sửa buổi dịch vụ đã hoàn thành.');
     const request=requestFor(transaction).input('id',dbTypes.Char(10),sessionId).input('package',dbTypes.Char(10),packageId);
     const assignments=[];
     if(has('performedAt')){request.input('performedAt',dbTypes.DateTime2,performedAt);assignments.push('ngayThucHien=@performedAt');}

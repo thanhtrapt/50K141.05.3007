@@ -28,9 +28,10 @@ export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete,
   const { showDialog, notify } = useFeedback();
 
   const activeServices = customer.activeServices ?? [];
+  const additionalServices = customer.additionalServices ?? [];
   const serviceHistory = customer.serviceHistory ?? [];
   const sales = customer.purchasedSales ?? [];
-  const visits = [...activeServices, ...serviceHistory].reduce((total, item) => total + Number(item.sessionsCompleted || 0), 0);
+  const visits = [...activeServices, ...additionalServices, ...serviceHistory].reduce((total, item) => total + Number(item.sessionsCompleted || 0), 0);
   const selectedService = services.find((service) => service.id === serviceId);
 
   useEffect(() => {
@@ -105,7 +106,7 @@ export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete,
         <section className="panel customer-detail__section">
           <div className="customer-detail__section-heading"><h2>Dịch vụ phát sinh</h2><Button onClick={() => setServiceModalOpen(true)}><Plus size={16} />Thêm dịch vụ</Button></div>
           <div className="customer-detail__rows">
-            {serviceHistory.length ? serviceHistory.map((service) => (
+            {additionalServices.length ? additionalServices.map((service) => (
               <p key={service.id}><span>{service.serviceName}</span><span>{formatCurrency(service.purchasePrice)}</span><span>{service.sessionsCompleted}/{service.totalSessions} buổi · {service.completionStatus}</span><Link className="text-link" to={`${serviceUsagePath}?packageId=${encodeURIComponent(service.id)}`}>Xem chi tiết</Link></p>
             )) : <p className="customer-detail__empty">Chưa có dịch vụ phát sinh</p>}
           </div>
@@ -124,7 +125,14 @@ export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete,
 
       <section className="panel customer-detail__section">
         <div className="customer-detail__section-heading"><h2>Lịch sử dịch vụ</h2><span>{serviceHistory.length} liệu trình</span></div>
-        {serviceHistory.length ? serviceHistory.map((service) => <p key={service.id}>{service.serviceName} · {service.sessionsCompleted}/{service.totalSessions} buổi · {service.completionStatus}</p>) : <p>Chưa có lịch sử dịch vụ.</p>}
+        <div className="customer-detail__rows">
+          {serviceHistory.length ? serviceHistory.map((service) => (
+            <p key={service.id}>
+              <span>{service.serviceName} · {service.sessionsCompleted}/{service.totalSessions} buổi · {service.completionStatus}</span>
+              <Link className="text-link" to={`${serviceUsagePath}?packageId=${encodeURIComponent(service.id)}`}>Xem chi tiết</Link>
+            </p>
+          )) : <p className="customer-detail__empty">Chưa có lịch sử dịch vụ.</p>}
+        </div>
       </section>
 
       <Modal open={serviceModalOpen} title="THÊM DỊCH VỤ" onClose={() => setServiceModalOpen(false)}>

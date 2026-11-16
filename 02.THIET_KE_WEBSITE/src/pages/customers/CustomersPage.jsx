@@ -84,6 +84,10 @@ export default function CustomersPage({ recordsOnly = false }) {
   const saveCustomer = async (form) => {
     const [day, month, year] = String(form.birthday || '').split('/');
     const body = { name: form.name, phone: form.phone, dateOfBirth: `${year}-${month}-${day}` };
+    if (editingId) {
+      if (form.cancellationCount !== undefined) body.cancellationCount = Number(form.cancellationCount);
+      body.serviceUpdates = form.serviceUpdates ?? [];
+    }
     const saved = editingId
       ? await apiRequest(`/api/customers/${encodeURIComponent(editingId)}`, { method: 'PUT', body })
       : await apiRequest('/api/customers', { method: 'POST', body });
@@ -167,6 +171,8 @@ export default function CustomersPage({ recordsOnly = false }) {
         nextId={nextId}
         onCancel={cancelForm}
         onSave={saveCustomer}
+        serviceUsagePath={editingId ? `${basePath}/${editingId}/dich-vu-dang-su-dung` : undefined}
+        returnPath={editingId ? `${basePath}/${editingId}/chinh-sua` : undefined}
         onAddPurchases={isCreate ? (form, purchases) => openRetailSale('tao-moi', form, purchases) : undefined}
         draft={routeState?.customerDraft}
         draftPurchases={routeState?.draftPurchases}
@@ -185,8 +191,8 @@ export default function CustomersPage({ recordsOnly = false }) {
           key={customerId}
           customer={selected}
           packageId={packageId}
-          fallbackPath={`${basePath}/${customerId}`}
-          onBack={() => navigate(`${basePath}/${customerId}`)}
+          fallbackPath={routeState?.returnPath ?? `${basePath}/${customerId}`}
+          onBack={() => navigate(routeState?.returnPath ?? `${basePath}/${customerId}`)}
         />
       );
     }

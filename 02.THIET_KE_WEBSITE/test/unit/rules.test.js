@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { login } from '../../api/_lib/authService.js';
-import { customerFields,createReview } from '../../api/_lib/customerService.js';
+import { customerFields,createReview,partitionCustomerServicePackages,updateCustomer } from '../../api/_lib/customerService.js';
 import { validateService } from '../../api/_lib/serviceService.js';
 import { validateProduct,createReceipt,createIssue } from '../../api/_lib/stockService.js';
 import { validateDateAndTime,createAppointment,getAvailability } from '../../api/_lib/appointmentService.js';
@@ -20,6 +20,26 @@ test('BR-1.2-01/02 and BR-1.4-01/02: customer fields are required, date is real 
   assert.throws(()=>customerFields({name:'Khách',phone:'091234567',dateOfBirth:'2000-01-01'}),error=>error.fieldErrors.some(x=>x.field==='phone'));
   const valid=customerFields({name:'Khách',phone:'0912345678',dateOfBirth:'2000-01-01'});
   assert.equal(valid.soDienThoai,'0912345678');
+  assert.equal(customerFields({name:'Khách',phone:'0912345678',dateOfBirth:'2000-01-01',cancellationCount:2},{partial:true}).soLanHuyLich,2);
+  assert.throws(()=>customerFields({cancellationCount:-1},{partial:true}),error=>error.fieldErrors.some(x=>x.field==='cancellationCount'));
+});
+
+test('customer profile API rejects attempts to update service history and recorded purchases',async()=>{
+  await assert.rejects(updateCustomer('KH00000001',{name:'Khách',serviceHistory:[]},null),error=>error.code==='VALIDATION_ERROR'&&error.fieldErrors.some(field=>field.field==='serviceHistory'));
+  await assert.rejects(updateCustomer('KH00000001',{purchasedProducts:[]},null),error=>error.code==='VALIDATION_ERROR'&&error.fieldErrors.some(field=>field.field==='purchasedProducts'));
+  await assert.rejects(updateCustomer('KH00000001',{serviceUpdates:[{id:'DV00000001',serviceId:'DV00000002'}]},null),error=>error.code==='VALIDATION_ERROR'&&error.fieldErrors.some(field=>field.field==='serviceUpdates.0.serviceId'));
+});
+
+test('customer service packages are separated into in-use, additional, and completed history',()=>{
+  const packages=[
+    {id:'A',completionStatus:'Đang thực hiện'},
+    {id:'B',completionStatus:'Chưa thực hiện'},
+    {id:'C',completionStatus:'Đã hoàn thành'},
+  ];
+  const result=partitionCustomerServicePackages(packages);
+  assert.deepEqual(result.activeServices.map(item=>item.id),['A']);
+  assert.deepEqual(result.additionalServices.map(item=>item.id),['B']);
+  assert.deepEqual(result.serviceHistory.map(item=>item.id),['C']);
 });
 
 test('BR-4.2-01/02 and BR-4.3-02: service name, price, sessions and session fields are validated',()=>{
