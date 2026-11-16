@@ -8,6 +8,10 @@ export default function ServiceSessionDetailPage({ service, sessionNumber, canWr
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const session = service.sessionDetails?.[sessionNumber - 1];
   const entries = session?.entries ?? [];
+  const techniques = [...new Map(entries
+    .filter((entry) => entry.technique?.trim())
+    .map((entry) => [entry.technique.trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi'), entry.technique.trim()])
+  ).values()];
 
   return (
     <div className="page-stack service-session-detail-page">
@@ -43,7 +47,7 @@ export default function ServiceSessionDetailPage({ service, sessionNumber, canWr
         <div className="service-session-detail__columns">
           <section>
             <h3>Kỹ thuật thực hiện</h3>
-            {entries.length ? <ul>{entries.map((entry, index) => <li key={`${entry.technique}-${index}`}>{entry.technique}</li>)}</ul> : <p>Chưa có kỹ thuật thực hiện.</p>}
+            {techniques.length ? <ul>{techniques.map((technique) => <li key={technique}>{technique}</li>)}</ul> : <p>Chưa có kỹ thuật thực hiện.</p>}
           </section>
           <section>
             <h3>Mỹ phẩm sử dụng</h3>

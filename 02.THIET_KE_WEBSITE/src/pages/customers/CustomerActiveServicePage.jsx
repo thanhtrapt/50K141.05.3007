@@ -90,6 +90,20 @@ function parseProducts(value) {
   }));
 }
 
+function uniqueTechniques(value) {
+  const entries = String(value ?? '')
+    .split(/\r?\n|\s*[•·]\s*|\s*;\s*/)
+    .map((entry) => entry.trim().replace(/^(?:[-*]|\d+[.)])\s*/, ''))
+    .filter(Boolean);
+  const seen = new Set();
+  return entries.filter((entry) => {
+    const key = entry.replace(/\s+/g, ' ').toLocaleLowerCase('vi');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function normalizePackage(record, customer) {
   const sessions = (record.sessions ?? []).map((session, index) => ({
     id: session.id,
@@ -103,7 +117,7 @@ function normalizePackage(record, customer) {
     employee: session.staffName || '',
     result: session.result || '',
     notes: session.note || '',
-    techniques: session.technique ? [session.technique] : [],
+    techniques: uniqueTechniques(session.technique),
     products: parseProducts(session.cosmeticsUsage),
     beforeImages: [],
     afterImages: session.image ? [{ id: `sql-${session.id}`, name: 'Ảnh tình trạng', dataUrl: session.image, persisted: true }] : [],
@@ -663,7 +677,7 @@ export default function CustomerActiveServicePage({ customer, packageId: request
           <div className="customer-service-session-detail__grid">
             <section className="customer-service-session-card customer-service-session-card--techniques">
               <h3>Nội dung chăm sóc · Quy trình kỹ thuật</h3>
-              <ul>{selectedSession.techniques.map((technique, index) => <li key={`${index}-${technique}`}>Bước {index + 1}: {technique}</li>)}</ul>
+              <ul>{uniqueTechniques(selectedSession.techniques.join('\n')).map((technique, index) => <li key={technique}>Bước {index + 1}: {technique}</li>)}</ul>
             </section>
 
             <section className="customer-service-session-card customer-service-session-card--products">
