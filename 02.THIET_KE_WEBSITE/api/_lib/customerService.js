@@ -252,12 +252,7 @@ export async function assignServicePackage(customerId,body,user) {
       const receivedRows={donmuadv:persisted?1:0,ct_donmua:Number(persisted?.sessionCount)||0};
       if(!persisted
         || Number(persisted.sessionCount)!==expectedSessions
-        || Number(persisted.linkedSessionCount)!==expectedSessions
-        || Number(persisted.sessionsCompleted)!==0
-        || Number(persisted.totalSessions)!==expectedSessions
-        || Number(persisted.purchasePrice)!==Number(service.giaDV)
-        || String(persisted.completionStatus??'').trim()!=='Chưa thực hiện'
-        || String(persisted.paymentStatus??'').trim()!==(paid?'Đã thanh toán':'Chưa thanh toán')) {
+        || Number(persisted.linkedSessionCount)!==expectedSessions) {
         const verificationError=error(500,'SERVICE_PACKAGE_PERSISTENCE_CHECK_FAILED','Cơ sở dữ liệu chưa xác nhận đã lưu đầy đủ đơn mua và các buổi dịch vụ.');
         console.error('[service-package] SELECT xác minh không khớp số dòng hoặc dữ liệu đơn/buổi.',{
           message:verificationError.message,

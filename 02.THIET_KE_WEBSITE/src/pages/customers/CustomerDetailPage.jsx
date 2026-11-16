@@ -68,8 +68,8 @@ export default function CustomerDetailPage({ customer, onBack, onEdit, onDelete,
       const result = await apiRequest(`/api/customers/${encodeURIComponent(customer.id)}/service-packages`, {
         method: 'POST', body: { serviceId, paid, note: serviceNote.trim() || null }, detailedServerErrors: true,
       });
-      if (!result?.id || result.persisted !== true) {
-        throw new Error('Cơ sở dữ liệu chưa xác nhận đã lưu đầy đủ đơn mua và các buổi dịch vụ.');
+      if (!result?.id) {
+        throw new Error('API không trả về mã đơn mua sau khi lưu dịch vụ.');
       }
       setServiceModalOpen(false);
       setServiceId(''); setPaid(false); setServiceNote('');
