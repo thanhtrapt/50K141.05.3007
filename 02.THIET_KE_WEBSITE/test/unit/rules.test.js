@@ -27,18 +27,18 @@ test('BR-1.2-01/02 and BR-1.4-01/02: customer fields are required, date is real 
 test('customer profile API rejects attempts to update service history and recorded purchases',async()=>{
   await assert.rejects(updateCustomer('KH00000001',{name:'Khách',serviceHistory:[]},null),error=>error.code==='VALIDATION_ERROR'&&error.fieldErrors.some(field=>field.field==='serviceHistory'));
   await assert.rejects(updateCustomer('KH00000001',{purchasedProducts:[]},null),error=>error.code==='VALIDATION_ERROR'&&error.fieldErrors.some(field=>field.field==='purchasedProducts'));
-  await assert.rejects(updateCustomer('KH00000001',{serviceUpdates:[{id:'DV00000001',serviceId:'DV00000002'}]},null),error=>error.code==='VALIDATION_ERROR'&&error.fieldErrors.some(field=>field.field==='serviceUpdates.0.serviceId'));
+  await assert.rejects(updateCustomer('KH00000001',{serviceUpdates:[{id:'DV00000001',serviceId:'DV00000002'}]},null),error=>error.code==='VALIDATION_ERROR'&&error.fieldErrors.some(field=>field.field==='serviceUpdates'));
 });
 
-test('customer service packages are separated into in-use, additional, and completed history',()=>{
+test('all unfinished customer service packages are shown as in use and completed packages remain in history',()=>{
   const packages=[
     {id:'A',completionStatus:'Đang thực hiện'},
     {id:'B',completionStatus:'Chưa thực hiện'},
     {id:'C',completionStatus:'Đã hoàn thành'},
   ];
   const result=partitionCustomerServicePackages(packages);
-  assert.deepEqual(result.activeServices.map(item=>item.id),['A']);
-  assert.deepEqual(result.additionalServices.map(item=>item.id),['B']);
+  assert.deepEqual(result.activeServices.map(item=>item.id),['A','B']);
+  assert.equal(Object.hasOwn(result,'additionalServices'),false);
   assert.deepEqual(result.serviceHistory.map(item=>item.id),['C']);
 });
 

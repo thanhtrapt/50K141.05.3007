@@ -14,12 +14,11 @@ AS $$
 DECLARE
   v_account char(10);
   v_order_id char(10);
-  v_session_id char(10);
   v_order_number bigint;
   v_session_number bigint;
   v_service_sessions integer;
   v_template_count integer;
-  v_template record;
+  v_inserted_sessions integer;
 BEGIN
   SELECT matk INTO v_account
   FROM public.taikhoan
@@ -63,19 +62,19 @@ BEGIN
   SELECT coalesce(max(right(rtrim(mact_donmua), 8)::bigint), 0) + 1 INTO v_session_number
   FROM public.ct_donmua
   WHERE rtrim(mact_donmua) ~ '^CM[0-9]{8}$';
-  FOR v_template IN
-    SELECT tenbuoi, mact_dichvu
-    FROM public.ct_dichvu
-    WHERE madichvu = btrim(p_madichvu)
-    ORDER BY mact_dichvu
-  LOOP
-    v_session_id := ('CM' || lpad(v_session_number::text, 8, '0'))::char(10);
-    INSERT INTO public.ct_donmua
-      (mact_donmua, tenbuoi, trangthaithuchien, xacnhankh, madonmua, mact_dichvu)
-    VALUES
-      (v_session_id, v_template.tenbuoi, 'Chưa thực hiện', 'Chưa xác nhận', v_order_id, v_template.mact_dichvu);
-    v_session_number := v_session_number + 1;
-  END LOOP;
+  INSERT INTO public.ct_donmua
+    (mact_donmua, tenbuoi, trangthaithuchien, xacnhankh, madonmua, mact_dichvu)
+  SELECT
+    ('CM' || lpad((v_session_number + row_number() OVER (ORDER BY template.mact_dichvu) - 1)::text, 8, '0'))::char(10),
+    template.tenbuoi, 'Chưa thực hiện', 'Chưa xác nhận', v_order_id, template.mact_dichvu
+  FROM public.ct_dichvu AS template
+  WHERE template.madichvu = btrim(p_madichvu)
+  ORDER BY template.mact_dichvu;
+  GET DIAGNOSTICS v_inserted_sessions = ROW_COUNT;
+  IF v_inserted_sessions <> v_service_sessions THEN
+    RAISE EXCEPTION 'Số buổi ghi vào chi tiết đơn mua không khớp: cần %, đã ghi %.',
+      v_service_sessions, v_inserted_sessions;
+  END IF;
 
   RETURN rtrim(v_order_id);
 END;

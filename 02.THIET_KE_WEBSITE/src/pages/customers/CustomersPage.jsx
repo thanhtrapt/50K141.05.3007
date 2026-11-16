@@ -86,7 +86,6 @@ export default function CustomersPage({ recordsOnly = false }) {
     const body = { name: form.name, phone: form.phone, dateOfBirth: `${year}-${month}-${day}` };
     if (editingId) {
       if (form.cancellationCount !== undefined) body.cancellationCount = Number(form.cancellationCount);
-      body.serviceUpdates = form.serviceUpdates ?? [];
     }
     const saved = editingId
       ? await apiRequest(`/api/customers/${encodeURIComponent(editingId)}`, { method: 'PUT', body })

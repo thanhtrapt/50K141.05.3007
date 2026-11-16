@@ -47,6 +47,10 @@
   gap: 12px;
 }
 
+.customer-detail__sections > .customer-detail__section {
+  grid-column: 1 / -1;
+}
+
 .customer-form__section > p,
 .customer-detail__empty {
   margin: 14px 0 0;

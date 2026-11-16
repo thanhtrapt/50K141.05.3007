@@ -108,18 +108,17 @@ export async function getCustomer(id) {
   }
   const sales=[...grouped.values()];
   const productRows=sales.flatMap(sale=>sale.items.map(item=>({...item,saleId:sale.saleId,purchaseDate:sale.purchaseDate})));
-  const { activeServices, additionalServices, serviceHistory } = partitionCustomerServicePackages(packages);
+  const { activeServices, serviceHistory } = partitionCustomerServicePackages(packages);
   return {...customer,isBlacklisted:customer.cancellationCount>=threshold,blacklistThreshold:threshold,
-    activeServices,additionalServices,serviceHistory,
+    activeServices,serviceHistory,
     purchasedProducts:productRows,purchasedSales:sales,
-    emptyLabels:{additionalServices:additionalServices.length?null:'Chưa có dịch vụ phát sinh',purchasedProducts:sales.length?null:'Chưa có sản phẩm mua thêm',serviceHistory:serviceHistory.length?null:'Chưa có lịch sử dịch vụ'},
+    emptyLabels:{purchasedProducts:sales.length?null:'Chưa có sản phẩm mua thêm',serviceHistory:serviceHistory.length?null:'Chưa có lịch sử dịch vụ'},
     actions:{recordRetailSale:true,viewServiceHistory:true}};
 }
 
 export function partitionCustomerServicePackages(packages=[]) {
   return {
-    activeServices:packages.filter(item=>item.completionStatus==='Đang thực hiện'),
-    additionalServices:packages.filter(item=>item.completionStatus==='Chưa thực hiện'),
+    activeServices:packages.filter(item=>item.completionStatus!=='Đã hoàn thành'),
     serviceHistory:packages.filter(item=>item.completionStatus==='Đã hoàn thành'),
   };
 }
@@ -145,43 +144,11 @@ export async function createCustomer(body,user) {
 }
 
 export async function updateCustomer(id,body,user) {
-  const allowed=new Set(['name','hoTen','dateOfBirth','ngaySinh','phone','soDienThoai','cancellationCount','soLanHuyLich','serviceUpdates']);
+  const allowed=new Set(['name','hoTen','dateOfBirth','ngaySinh','phone','soDienThoai','cancellationCount','soLanHuyLich']);
   const forbidden=Object.keys(body??{}).filter(field=>!allowed.has(field));
   if(forbidden.length)throw badRequest('Không được phép cập nhật dữ liệu lịch sử hoặc giao dịch đã ghi nhận.',forbidden.map(field=>({field,message:'Trường này không được phép chỉnh sửa.'})));
   const fields=customerFields(body,{partial:true});
-  const rawServiceUpdates=body?.serviceUpdates??[];
-  const serviceErrors=[];
-  if(!Array.isArray(rawServiceUpdates))serviceErrors.push({field:'serviceUpdates',message:'Danh sách dịch vụ cập nhật không hợp lệ.'});
-  const updatesById=new Set();
-  const serviceUpdates=(Array.isArray(rawServiceUpdates)?rawServiceUpdates:[]).map((item,index)=>{
-    if(!item||typeof item!=='object'||Array.isArray(item)){serviceErrors.push({field:`serviceUpdates.${index}`,message:'Thông tin dịch vụ cập nhật không hợp lệ.'});return null;}
-    const permitted=new Set(['id','paymentStatus','note','summaryFile']);
-    for(const field of Object.keys(item))if(!permitted.has(field))serviceErrors.push({field:`serviceUpdates.${index}.${field}`,message:'Trường này không được phép chỉnh sửa.'});
-    const packageId=String(item.id??'').trim();
-    if(!packageId)serviceErrors.push({field:`serviceUpdates.${index}.id`,message:'Thiếu mã dịch vụ cần cập nhật.'});
-    if(updatesById.has(packageId))serviceErrors.push({field:`serviceUpdates.${index}.id`,message:'Không được gửi trùng dịch vụ.'});
-    updatesById.add(packageId);
-    const update={id:packageId};
-    if(Object.hasOwn(item,'paymentStatus')){
-      const value=String(item.paymentStatus??'').trim();
-      if(!['Chưa thanh toán','Đã thanh toán'].includes(value))serviceErrors.push({field:`serviceUpdates.${index}.paymentStatus`,message:'Trạng thái thanh toán không hợp lệ.'});
-      else update.paymentStatus=value;
-    }
-    if(Object.hasOwn(item,'note')){
-      const value=item.note==null?null:String(item.note);
-      if(value!=null&&value.length>255)serviceErrors.push({field:`serviceUpdates.${index}.note`,message:'Ghi chú tối đa 255 ký tự.'});
-      else update.note=value;
-    }
-    if(Object.hasOwn(item,'summaryFile')){
-      const value=item.summaryFile==null?null:String(item.summaryFile).trim();
-      if(value!=null&&value.length>255)serviceErrors.push({field:`serviceUpdates.${index}.summaryFile`,message:'Tệp tổng hợp tối đa 255 ký tự.'});
-      else update.summaryFile=value||null;
-    }
-    if(Object.keys(update).length===1)serviceErrors.push({field:`serviceUpdates.${index}`,message:'Chọn ít nhất một thông tin dịch vụ cần cập nhật.'});
-    return update;
-  }).filter(Boolean);
-  if(serviceErrors.length)throw badRequest('Thông tin dịch vụ cập nhật chưa hợp lệ.',serviceErrors);
-  if(!Object.keys(fields).length&&!serviceUpdates.length)throw badRequest('Thông tin khách hàng chưa hợp lệ.');
+  if(!Object.keys(fields).length)throw badRequest('Thông tin khách hàng chưa hợp lệ.');
   return inTransaction(async transaction=>{
     const before=await findCustomer(id,transaction);
     if(fields.soDienThoai)await ensureUniquePhone(fields.soDienThoai,id,transaction);
@@ -192,21 +159,6 @@ export async function updateCustomer(id,body,user) {
       if(fields.soDienThoai!==undefined){set.push('soDienThoai=@phone');request.input('phone',dbTypes.VarChar(10),fields.soDienThoai);}
       if(fields.soLanHuyLich!==undefined){set.push('soLanHuyLich=@cancellationCount');request.input('cancellationCount',dbTypes.Int,fields.soLanHuyLich);}
       await request.query(`UPDATE dbo.KhachHang SET ${set.join(',')} WHERE maKhachHang=@id`);
-    }
-    for(const update of serviceUpdates){
-      const current=(await requestFor(transaction).input('package',dbTypes.Char(10),update.id).input('customer',dbTypes.Char(10),id)
-        .query(`SELECT maDonMua AS id,trangThaiHoanThanh AS completionStatus,trangThaiThanhToan AS paymentStatus,ghiChu AS note,fileTongHop AS summaryFile
-          FROM dbo.DonMuaDV WITH (UPDLOCK,HOLDLOCK) WHERE maDonMua=@package AND maKhachHang=@customer`)).recordset[0];
-      if(!current)throw notFound('Không tìm thấy dịch vụ thuộc hồ sơ khách hàng này.');
-      if(current.completionStatus==='Đã hoàn thành')throw error(409,'SERVICE_HISTORY_READ_ONLY','Không thể chỉnh sửa dịch vụ đã hoàn thành.');
-      const set=[];const request=requestFor(transaction).input('package',dbTypes.Char(10),update.id);
-      if(update.paymentStatus!==undefined){set.push('trangThaiThanhToan=@payment');request.input('payment',dbTypes.NVarChar(50),update.paymentStatus);}
-      if(update.note!==undefined){set.push('ghiChu=@note');request.input('note',dbTypes.NVarChar(255),update.note);}
-      if(update.summaryFile!==undefined){set.push('fileTongHop=@summaryFile');request.input('summaryFile',dbTypes.NVarChar(255),update.summaryFile);}
-      const after=(await request.query(`UPDATE dbo.DonMuaDV SET ${set.join(',')} WHERE maDonMua=@package
-        RETURNING maDonMua AS id,trangThaiThanhToan AS paymentStatus,ghiChu AS note,fileTongHop AS summaryFile`)).recordset[0];
-      if(!after)throw notFound('Không tìm thấy dịch vụ cần cập nhật.');
-      await insertAudit({transaction,user,action:'Cập nhật dịch vụ trong hồ sơ khách hàng',entity:'DonMuaDV',entityId:update.id,before:current,after});
     }
     const after=await findCustomer(id,transaction);
     if(Object.keys(fields).length)await insertAudit({transaction,user,action:'Cập nhật thông tin khách hàng',entity:'KhachHang',entityId:id,before,after});
@@ -258,13 +210,70 @@ export async function assignServicePackage(customerId,body,user) {
           .input('paid',dbTypes.Bit,paid).input('note',dbTypes.VarChar(255),note==null?null:String(note))
           .query('SELECT public.fn_tao_don_mua_dich_vu(@customer,@service,@paid,@note) AS id')).recordset[0]?.id;
       } catch(rpcError) {
-        console.error('Lỗi fn_tao_don_mua_dich_vu:',rpcError);
+        console.error('[service-package] RPC fn_tao_don_mua_dich_vu thất bại; hàm này INSERT đơn mua và các buổi trong cùng transaction.',{
+          message:rpcError?.message,
+          details:rpcError?.details??rpcError?.detail,
+          detail:rpcError?.detail,
+          hint:rpcError?.hint,
+          code:rpcError?.code,
+          expectedRows:{donmuadv:1,ct_donmua:Number(service.tongSoBuoi)},
+          receivedRows:{donmuadv:null,ct_donmua:null},
+        });
         throw error(422,'SERVICE_PACKAGE_RPC_FAILED',rpcError.message);
       }
       if(!packageId)throw error(500,'SERVICE_PACKAGE_RPC_EMPTY','Hàm tạo dịch vụ không trả về mã đơn mua.');
+      const expectedSessions=Number(service.tongSoBuoi);
+      let persisted;
+      try {
+        persisted=(await requestFor(transaction)
+          .input('package',dbTypes.Char(10),packageId)
+          .input('customer',dbTypes.Char(10),customerId)
+          .input('service',dbTypes.Char(10),serviceId)
+          .query(`SELECT d.maDonMua AS id,d.maKhachHang AS customerId,d.maDichVu AS serviceId,
+          d.trangThaiThanhToan AS paymentStatus,d.trangThaiHoanThanh AS completionStatus,
+          d.soBuoiDaThucHien AS sessionsCompleted,s.giaDV AS purchasePrice,s.tongSoBuoi AS totalSessions,
+          (SELECT COUNT(*) FROM dbo.CT_DonMua c WHERE c.maDonMua=d.maDonMua) AS sessionCount,
+          (SELECT COUNT(*) FROM dbo.CT_DonMua c JOIN dbo.CT_DichVu t ON t.maCT_DichVu=c.maCT_DichVu
+            WHERE c.maDonMua=d.maDonMua AND t.maDichVu=d.maDichVu) AS linkedSessionCount
+          FROM dbo.DonMuaDV d JOIN dbo.DichVu s ON s.maDichVu=d.maDichVu
+          WHERE d.maDonMua=@package AND d.maKhachHang=@customer AND d.maDichVu=@service`)).recordset[0];
+      } catch(selectError) {
+        console.error('[service-package] SELECT xác minh đơn mua/buổi thất bại.',{
+          message:selectError?.message,
+          details:selectError?.details??selectError?.detail,
+          detail:selectError?.detail,
+          hint:selectError?.hint,
+          code:selectError?.code,
+          expectedRows:{donmuadv:1,ct_donmua:expectedSessions},
+          receivedRows:{donmuadv:null,ct_donmua:null},
+        });
+        throw selectError;
+      }
+      const receivedRows={donmuadv:persisted?1:0,ct_donmua:Number(persisted?.sessionCount)||0};
+      if(!persisted
+        || Number(persisted.sessionCount)!==expectedSessions
+        || Number(persisted.linkedSessionCount)!==expectedSessions
+        || Number(persisted.sessionsCompleted)!==0
+        || Number(persisted.totalSessions)!==expectedSessions
+        || Number(persisted.purchasePrice)!==Number(service.giaDV)
+        || String(persisted.completionStatus??'').trim()!=='Chưa thực hiện'
+        || String(persisted.paymentStatus??'').trim()!==(paid?'Đã thanh toán':'Chưa thanh toán')) {
+        const verificationError=error(500,'SERVICE_PACKAGE_PERSISTENCE_CHECK_FAILED','Cơ sở dữ liệu chưa xác nhận đã lưu đầy đủ đơn mua và các buổi dịch vụ.');
+        console.error('[service-package] SELECT xác minh không khớp số dòng hoặc dữ liệu đơn/buổi.',{
+          message:verificationError.message,
+          details:verificationError.details,
+          hint:verificationError.hint,
+          code:verificationError.code,
+          expectedRows:{donmuadv:1,ct_donmua:expectedSessions},
+          receivedRows,
+          linkedSessionRows:Number(persisted?.linkedSessionCount)||0,
+        });
+        throw verificationError;
+      }
       return {id:String(packageId).trim(),customerId:customer.id,serviceId:service.maDichVu.trim(),serviceName:service.tenDV,
         purchasePrice:Number(service.giaDV),paymentStatus:paid?'Đã thanh toán':'Chưa thanh toán',completionStatus:'Chưa thực hiện',
-        totalSessions:Number(service.tongSoBuoi),sessionsCompleted:0,note:note??null,message:'Thêm dịch vụ thành công'};
+        totalSessions:expectedSessions,sessionsCompleted:0,persisted:true,sessionRows:Number(persisted.sessionCount),
+        note:note??null,message:'Thêm dịch vụ thành công'};
     });
   } catch (cause) {
     if (cause instanceof AppError) throw cause;
